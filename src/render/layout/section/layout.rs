@@ -2404,24 +2404,46 @@ pub(crate) fn layout_section_with_clearance(
                         false,
                     );
 
-                    // §17.4.28 / §17.4.50: compute table x position.
-                    let table_x = table_x_offset(
-                        *alignment,
-                        *indent,
-                        table.size.width,
-                        content_width,
-                        config.margins.left,
-                        direction,
-                    );
-                    // §17.4.57: apply tblpXSpec horizontal alignment override.
-                    let table_x = match fi.x_align {
-                        Some(crate::model::TableXAlign::Center) => {
-                            config.margins.left + (content_width - table.size.width) * 0.5
+                    // §17.4.57: the frame `horzAnchor` names.
+                    let (frame_left, frame_width) = match fi.horz_anchor {
+                        crate::model::TableAnchor::Text => {
+                            (col_x(state.current_col), content_width)
                         }
-                        Some(crate::model::TableXAlign::Right) => {
-                            config.margins.left + content_width - table.size.width
+                        crate::model::TableAnchor::Margin => (
+                            config.margins.left,
+                            config.page_size.width - config.margins.left - config.margins.right,
+                        ),
+                        crate::model::TableAnchor::Page => (Pt::ZERO, config.page_size.width),
+                    };
+                    // Measured against `test-files/floating-table-x.docx`:
+                    //  * Word puts the cell *text* on the position, so the
+                    //    edge sits one text inset outside it, and `center`
+                    //    centres the box.
+                    //  * §17.4.28 `w:jc` center/end **wins**: over `tblpX`,
+                    //    and over a `tblpXSpec` that says otherwise, placing
+                    //    the table as the matching `tblpXSpec` would. `start`
+                    //    leaves `tblpX`/`tblpXSpec` in charge. Under
+                    //    `w:bidi`, `end` is the left edge — read logically,
+                    //    as in the flow, and not measured for a float.
+                    //  * `inside`/`outside` are not measured, and take
+                    //    `tblpX` as before.
+                    use crate::model::TableXAlign;
+                    let rtl = direction == crate::i18n::bidi::BaseDirection::Rtl;
+                    let x_align = match alignment {
+                        Some(crate::model::Alignment::Center) => Some(TableXAlign::Center),
+                        Some(crate::model::Alignment::End) if rtl => Some(TableXAlign::Left),
+                        Some(crate::model::Alignment::End) => Some(TableXAlign::Right),
+                        _ => fi.x_align,
+                    };
+                    let table_x = match x_align {
+                        Some(TableXAlign::Left) => frame_left - fi.text_inset_left,
+                        Some(TableXAlign::Center) => {
+                            frame_left + (frame_width - table.size.width) * 0.5
                         }
-                        _ => table_x,
+                        Some(TableXAlign::Right) => {
+                            frame_left + frame_width - table.size.width + fi.text_inset_right
+                        }
+                        _ => frame_left + fi.x_offset - fi.text_inset_left,
                     };
 
                     // §17.4.57: anchor-page heuristic — if the cursor isn't

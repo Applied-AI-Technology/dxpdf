@@ -986,30 +986,6 @@ pub(super) fn build_table(
         mirror_columns(&mut rows, &mut col_widths, &mut border_config);
     }
 
-    // §17.4.57: floating table positioning.
-    //
-    // Horizontal positioning is partial: only `tblpXSpec` (`x_align`, below)
-    // and `rightFromText` (`right_gap`, which only widens the wrap-reservation
-    // width, not the table's own position) currently reach layout. `tblpX`
-    // (`pos.x`), `horzAnchor` and `leftFromText` are parsed into the model but
-    // not carried into `TableFloatInfo` — a horizontally-offset or
-    // margin/page-anchored-horizontally table places as if none of those were
-    // set.
-    let float_info = positioning.map(|pos| {
-        super::super::section::TableFloatInfo {
-            right_gap: pos.right_from_text.map(Pt::from).unwrap_or(Pt::ZERO),
-            bottom_gap: pos.bottom_from_text.map(Pt::from).unwrap_or(Pt::ZERO),
-            x_align: pos.x_align,
-            // §17.4.57: tblpY — absolute Y offset from the vertical anchor.
-            y_offset: pos.y.map(Pt::from).unwrap_or(Pt::ZERO),
-            // §17.4.57: default vertical anchor is "text".
-            vert_anchor: pos.vert_anchor.unwrap_or(crate::model::TableAnchor::Text),
-            // §17.4.56: tblOverlap controls collision behavior with
-            // other floats on the same page.
-            overlap,
-        }
-    });
-
     // §17.4.50: table indentation from left margin.
     // For full-width left-aligned tables, MS Word shifts the table left
     // by the default cell margin so cell content aligns with paragraph text.
@@ -1077,6 +1053,44 @@ pub(super) fn build_table(
         .and_then(|b| b.left.as_ref())
         .map(|l| crate::render::layout::table::borders::drawn_width(l) * 0.5)
         .unwrap_or(Pt::ZERO);
+    let trailing_border = border_config
+        .as_ref()
+        .and_then(|b| b.right.as_ref())
+        .map(|r| crate::render::layout::table::borders::drawn_width(r) * 0.5)
+        .unwrap_or(Pt::ZERO);
+    // §17.4.57: floating table positioning.
+    //
+    // Horizontal positioning: `tblpX`, `tblpXSpec` and `horzAnchor` reach
+    // layout, measured against `test-files/floating-table-x.docx`, and
+    // `rightFromText` widens the wrap reservation. `leftFromText` is parsed
+    // and not yet carried, so text to a float's left wraps flush against it.
+    let float_info = positioning.map(|pos| {
+        super::super::section::TableFloatInfo {
+            right_gap: pos.right_from_text.map(Pt::from).unwrap_or(Pt::ZERO),
+            bottom_gap: pos.bottom_from_text.map(Pt::from).unwrap_or(Pt::ZERO),
+            x_align: pos.x_align,
+            // §17.4.57: absent, the position is from the text column — Word
+            // places the corpus's anchor-less tables on the column's edge.
+            horz_anchor: pos.horz_anchor.unwrap_or(crate::model::TableAnchor::Text),
+            x_offset: pos.x.map(Pt::from).unwrap_or(Pt::ZERO),
+            text_inset_left: default_cell_margins
+                .map(|m| Pt::from(m.left))
+                .unwrap_or(Pt::ZERO)
+                .max(leading_border),
+            text_inset_right: default_cell_margins
+                .map(|m| Pt::from(m.right))
+                .unwrap_or(Pt::ZERO)
+                .max(trailing_border),
+            // §17.4.57: tblpY — absolute Y offset from the vertical anchor.
+            y_offset: pos.y.map(Pt::from).unwrap_or(Pt::ZERO),
+            // §17.4.57: default vertical anchor is "text".
+            vert_anchor: pos.vert_anchor.unwrap_or(crate::model::TableAnchor::Text),
+            // §17.4.56: tblOverlap controls collision behavior with
+            // other floats on the same page.
+            overlap,
+        }
+    });
+
     let indent = match table_indent {
         Some(model::TableMeasure::Twips(tw)) if tw.raw() != 0 => Pt::from(*tw) - leading_border,
         _ if is_full_width && is_left_aligned => -default_cell_margins
@@ -2720,19 +2734,17 @@ mod tests {
 
     /// §17.4.57: which of `<w:tblpPr>`'s ten attributes reach layout.
     ///
-    /// Five do — `rightFromText` and `bottomFromText` as the two wrap gaps,
-    /// `tblpY` as the offset, `vertAnchor`, and `tblpXSpec`. Two more are
-    /// dropped *structurally*: `TableFloatInfo` has no field for `horzAnchor`
-    /// or `tblpYSpec` at all, so nothing here could carry them. The remaining
-    /// three — `tblpX`, `leftFromText`, `topFromText` — are parsed and
-    /// deliberately not carried, which `build_table` states at the site: a
-    /// horizontally-offset table places as if none of them were set.
+    /// Seven do — `rightFromText` and `bottomFromText` as the two wrap gaps,
+    /// `tblpY` and `tblpX` as the offsets, `vertAnchor`, `horzAnchor` and
+    /// `tblpXSpec`. `tblpYSpec` is dropped *structurally* (`TableFloatInfo`
+    /// has no field for it); `leftFromText` and `topFromText` are parsed and
+    /// not carried, which `build_table` states at the site.
     ///
-    /// Each dropped attribute is given a value no honoured field could be
-    /// mistaken for, so a wire crossed between `left`/`right`, `top`/`bottom`
-    /// or `x`/`y` shows up as a wrong number rather than as a missing one.
+    /// Each attribute is given a value no other field could be mistaken for,
+    /// so a wire crossed between `left`/`right`, `top`/`bottom` or `x`/`y`
+    /// shows up as a wrong number rather than as a missing one.
     #[test]
-    fn five_of_tbl_p_prs_ten_attributes_reach_the_float_info() {
+    fn seven_of_tbl_p_prs_ten_attributes_reach_the_float_info() {
         let props = model::TableProperties {
             width: measure(dxa(4000)),
             positioning: model::Dup::from(Some(model::TablePositioning {
@@ -2744,7 +2756,7 @@ mod tests {
                 horz_anchor: Some(model::TableAnchor::Margin),
                 x_align: Some(model::TableXAlign::Right),
                 y_align: Some(model::TableYAlign::Bottom),
-                x: Some(Dimension::new(9999)),
+                x: Some(Dimension::new(600)),
                 y: Some(Dimension::new(400)),
             })),
             overlap: model::Dup::from(Some(model::TableOverlap::Never)),
@@ -2761,7 +2773,9 @@ mod tests {
         );
         assert_pt(f.bottom_gap, 10.0, "bottomFromText's 200, not topFromText");
         assert_pt(f.y_offset, 20.0, "tblpY's 400, not tblpX");
+        assert_pt(f.x_offset, 30.0, "tblpX's 600, not tblpY");
         assert_eq!(f.vert_anchor, model::TableAnchor::Page);
+        assert_eq!(f.horz_anchor, model::TableAnchor::Margin);
         assert_eq!(f.x_align, Some(model::TableXAlign::Right));
         assert_eq!(
             f.overlap,

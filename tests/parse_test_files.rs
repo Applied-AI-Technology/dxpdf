@@ -441,6 +441,7 @@ const ALL_FILES: &[&str] = &[
     "anchor-in-cell.docx",
     "anchor-valign.docx",
     "break-clear.docx",
+    "floating-table-x.docx",
 ];
 
 #[test]
