@@ -438,6 +438,7 @@ const ALL_FILES: &[&str] = &[
     "bidi-tabs.docx",
     "text-effects.docx",
     "picture-transparency.docx",
+    "anchor-in-cell.docx",
 ];
 
 #[test]

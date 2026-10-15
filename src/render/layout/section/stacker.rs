@@ -313,11 +313,19 @@ pub fn stack_blocks(
                         src_rect: fi.src_rect,
                         opacity: fi.opacity,
                     });
-                    // Extend cursor to encompass the image so table cells
-                    // expand to contain floating images.
-                    let img_bottom = img_y + fi.size.height;
-                    if img_bottom > cursor_y {
-                        cursor_y = img_bottom;
+                    // A float that displaces text (§20.4.2.16–.18 square,
+                    // tight, through) is contained: the stacked height reaches
+                    // its bottom, so a table cell grows around it. A
+                    // `wrapNone` one (§20.4.2.15) overlays the flow and takes
+                    // no room from it, in front of the text or behind it —
+                    // Word draws a cell holding only such a picture at one
+                    // empty line (`test-files/anchor-in-cell.docx`). That is
+                    // the floating logo or seal that overhangs its cell.
+                    if fi.wrap_mode.registers_as_wrap_float() {
+                        let img_bottom = img_y + fi.size.height;
+                        if img_bottom > cursor_y {
+                            cursor_y = img_bottom;
+                        }
                     }
                 }
 
@@ -781,16 +789,18 @@ mod tests {
         );
     }
 
-    /// ...but it is still *drawn*, and still expands the stacked height so a
-    /// table cell contains it. Only the wrap registration was wrong.
+    /// ...but it is still *drawn* — and it takes no height either. A
+    /// `wrapNone` picture overlays the flow, so a table cell holding one is as
+    /// tall as its text, not as the picture: `test-files/anchor-in-cell.docx`
+    /// measured in Word, asserted end-to-end by `tests/float_layout_probes.rs`.
     #[test]
-    fn wrap_none_image_is_still_emitted() {
+    fn wrap_none_image_is_still_emitted_and_takes_no_height() {
+        let baseline = stack(&[wide_para(vec![])]);
         let result = stack(&[wide_para(vec![sized_image(200.0, WrapMode::None)])]);
         assert_eq!(image_ys(&result), vec![0.0], "the image is painted");
-        assert!(
-            (result.height.raw() - 60.0).abs() < 1e-4,
-            "height still reaches the image bottom, got {}",
-            result.height.raw()
+        assert_eq!(
+            result.height, baseline.height,
+            "the stacked height is the text's, not the image's"
         );
     }
 
