@@ -255,6 +255,17 @@ pub struct BlipXml {
     pub link: Option<String>,
     #[serde(rename = "@cstate", default)]
     pub cstate: Option<StBlipCompression>,
+    /// §20.1.8.4 — the one blip effect read; the rest of the
+    /// `EG_Blip` effects (`lum`, `grayscl`, `duotone`, …) are not modelled.
+    #[serde(rename = "alphaModFix", default)]
+    pub alpha_mod_fix: Vec<AlphaModFixXml>,
+}
+
+/// §20.1.8.4 `a:alphaModFix`. `@amt` defaults to 100000 (opaque).
+#[derive(Debug, Deserialize)]
+pub struct AlphaModFixXml {
+    #[serde(rename = "@amt", default)]
+    pub amt: Option<Dimension<ThousandthPercent>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -346,6 +357,9 @@ impl From<BlipFillXml> for BlipFill {
             embed: b.embed.map(RelId::new),
             link: b.link.map(RelId::new),
             compression: b.cstate.map(Into::into),
+            alpha_mod_fix: Dup::from(b.alpha_mod_fix)
+                .into_value()
+                .map(|a| a.amt.unwrap_or(Dimension::new(100_000))),
         });
         let fill_kind = match (
             Dup::from(x.stretch).into_value(),

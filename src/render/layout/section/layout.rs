@@ -732,6 +732,7 @@ fn register_paragraph_floats(
                 ),
                 image_data: fi.image_data.clone(),
                 src_rect: fi.src_rect,
+                opacity: fi.opacity,
             });
             if y_end > state.cursor_y {
                 state.cursor_y = y_end;
@@ -2331,6 +2332,7 @@ pub(crate) fn layout_section_with_clearance(
                         ),
                         image_data: fi.image_data.clone(),
                         src_rect: fi.src_rect,
+                        opacity: fi.opacity,
                     });
                 }
 

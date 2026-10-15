@@ -114,6 +114,8 @@ pub enum DrawCommand {
         /// relative to the image's natural extent, applied before the image
         /// is stretched into `rect`. `None` draws the whole image.
         src_rect: Option<PtRect>,
+        /// §20.1.8.4 `a:alphaModFix`: opacity in `[0, 1]`, `1.0` for opaque.
+        opacity: f32,
     },
     /// One emoji grapheme cluster placed at `rect`. The painter rasterizes
     /// the cluster against `typeface` (Skia raster backend honours the color
@@ -695,6 +697,7 @@ mod tests {
                         format: crate::model::ImageFormat::Png,
                     },
                     src_rect: None,
+                    opacity: 1.0,
                 },
             ),
             (

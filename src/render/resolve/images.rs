@@ -78,6 +78,19 @@ pub fn extract_src_rect(image: &Image) -> Option<PtRect> {
     relative_rect_to_fraction(pic.blip_fill.src_rect.as_ref()?)
 }
 
+/// §20.1.8.4 `a:alphaModFix` → the opacity a picture is drawn at, in
+/// `[0, 1]`: `1.0` without the element or for a non-picture graphic.
+pub fn extract_opacity(image: &Image) -> f32 {
+    let Some(GraphicContent::Picture(pic)) = image.graphic.as_ref() else {
+        return 1.0;
+    };
+    pic.blip_fill
+        .blip
+        .as_ref()
+        .and_then(|b| b.alpha_mod_fix)
+        .map_or(1.0, |amt| amt.to_fraction().clamp(0.0, 1.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +128,7 @@ mod tests {
                         embed: Some(RelId::new(rel_id)),
                         link: None,
                         compression: None,
+                        alpha_mod_fix: None,
                     }),
                     src_rect: None,
                     fill_kind: BlipFillKind::Unspecified,

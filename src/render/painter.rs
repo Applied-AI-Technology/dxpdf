@@ -464,7 +464,15 @@ fn render_page(
                 rect,
                 image_data,
                 src_rect,
+                opacity,
             } => {
+                // §20.1.8.4 `a:alphaModFix`: the whole picture at one opacity.
+                // Applied on the draw, not baked into the bitmap, so the cache
+                // below stays keyed on pixels alone.
+                let mut image_paint = default_paint.clone();
+                if *opacity < 1.0 {
+                    image_paint.set_alpha_f(opacity.max(0.0));
+                }
                 // §20.1.10.48: resolve the srcRect against the image bounds. A
                 // region reaching outside the image (negative insets) pads the
                 // frame — it becomes an in-image crop plus a shrunken `dst`,
@@ -491,7 +499,7 @@ fn render_page(
                     if let Some(image) = image_cache.get(&key) {
                         // The cached bitmap already has any crop baked in → the
                         // whole bitmap maps to `dst`.
-                        canvas.draw_image_rect(image, None, dst, &default_paint);
+                        canvas.draw_image_rect(image, None, dst, &image_paint);
                     } else if let Some(decoded) = decode_image(image_data) {
                         match &crop {
                             // Bake the visible sub-region into a right-sized
@@ -500,7 +508,7 @@ fn render_page(
                             Some(crop) => {
                                 match prepare_cropped(&decoded, crop, draw_rect, image_dpi) {
                                     Some(image) => {
-                                        canvas.draw_image_rect(&image, None, dst, &default_paint);
+                                        canvas.draw_image_rect(&image, None, dst, &image_paint);
                                         image_cache.insert(key, image);
                                     }
                                     // Near-OOM: the raster surface could not be
@@ -514,14 +522,14 @@ fn render_page(
                                             &decoded,
                                             Some((&src, SrcRectConstraint::Strict)),
                                             dst,
-                                            &default_paint,
+                                            &image_paint,
                                         );
                                     }
                                 }
                             }
                             None => {
                                 let image = downsample_if_oversize(decoded, draw_rect, image_dpi);
-                                canvas.draw_image_rect(&image, None, dst, &default_paint);
+                                canvas.draw_image_rect(&image, None, dst, &image_paint);
                                 image_cache.insert(key, image);
                             }
                         }
@@ -1409,6 +1417,7 @@ mod tests {
                 rect: rect(72.0, 72.0),
                 image_data: media.clone(),
                 src_rect: None,
+                opacity: 1.0,
             }],
             page_size: PtSize::new(Pt::new(200.0), Pt::new(200.0)),
         };
@@ -1444,6 +1453,7 @@ mod tests {
                 rect: rect(72.0, 72.0),
                 image_data: media.clone(),
                 src_rect: None,
+                opacity: 1.0,
             }],
             page_size: PtSize::new(Pt::new(200.0), Pt::new(200.0)),
         };

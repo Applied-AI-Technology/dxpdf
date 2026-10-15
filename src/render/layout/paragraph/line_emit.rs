@@ -1002,6 +1002,7 @@ pub(super) fn emit_line_commands(
                     size,
                     image_data,
                     src_rect,
+                    opacity,
                     ..
                 } => {
                     let advance = size.width
@@ -1018,6 +1019,7 @@ pub(super) fn emit_line_commands(
                             ),
                             image_data: data.clone(),
                             src_rect: *src_rect,
+                            opacity: *opacity,
                         });
                     }
                 }

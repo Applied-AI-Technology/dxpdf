@@ -303,6 +303,7 @@ mod tests {
                         embed: Some(RelId::new(rel_id)),
                         link: None,
                         compression: None,
+                        alpha_mod_fix: None,
                     }),
                     src_rect: None,
                     fill_kind: BlipFillKind::Unspecified,
@@ -386,6 +387,7 @@ mod tests {
             embed: None,
             link: Some(RelId::new("rId7")),
             compression: None,
+            alpha_mod_fix: None,
         };
         let remap = remap_one("rId7", "linked");
         rewrite_blip(&mut blip, &remap);
@@ -528,6 +530,7 @@ mod tests {
                     embed: Some(RelId::new(rel_id)),
                     link: None,
                     compression: None,
+                    alpha_mod_fix: None,
                 }),
                 src_rect: None,
                 fill_kind: BlipFillKind::Unspecified,
@@ -584,6 +587,7 @@ mod tests {
                     embed: Some(RelId::new("rId7")),
                     link: None,
                     compression: None,
+                    alpha_mod_fix: None,
                 }),
                 src_rect: None,
                 fill_kind: BlipFillKind::Unspecified,

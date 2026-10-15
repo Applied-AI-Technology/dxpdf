@@ -135,6 +135,7 @@ pub(super) fn extract_floating_images(
             image_data,
             size: PtSize::new(w, h),
             src_rect: crate::render::resolve::images::extract_src_rect(img),
+            opacity: crate::render::resolve::images::extract_opacity(img),
             x,
             y,
             wrap_mode: crate::render::layout::section::WrapMode::from_model(&anchor.wrap),
@@ -415,6 +416,8 @@ fn build_vml_floating_image(
         size: PtSize::new(width, height),
         // VML crops (`v:imagedata` crop*) are a separate mechanism; not modelled.
         src_rect: None,
+        // Likewise VML's own transparency attributes.
+        opacity: 1.0,
         x,
         y: FloatingImageY::RelativeToParagraph(y),
         wrap_mode: WrapMode::None,
@@ -2203,6 +2206,7 @@ mod tests {
                     embed: Some(RelId::new("rId7")),
                     link: None,
                     compression: None,
+                    alpha_mod_fix: None,
                 }),
                 src_rect: None,
                 fill_kind: BlipFillKind::Unspecified,

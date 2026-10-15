@@ -383,6 +383,7 @@ fn render_header(
             ),
             image_data: fi.image_data.clone(),
             src_rect: fi.src_rect,
+            opacity: fi.opacity,
         });
     }
 
@@ -404,6 +405,7 @@ fn render_header(
             ),
             image_data: fi.image_data.clone(),
             src_rect: fi.src_rect,
+            opacity: fi.opacity,
         });
     }
     // Paragraph-anchored shapes ride through `result.commands` above (their
@@ -454,6 +456,7 @@ fn render_footer(
             ),
             image_data: fi.image_data.clone(),
             src_rect: fi.src_rect,
+            opacity: fi.opacity,
         });
     }
 
@@ -474,6 +477,7 @@ fn render_footer(
             ),
             image_data: fi.image_data.clone(),
             src_rect: fi.src_rect,
+            opacity: fi.opacity,
         });
     }
     // Paragraph-anchored shapes ride through `result.commands` above (their

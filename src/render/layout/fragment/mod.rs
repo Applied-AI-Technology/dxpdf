@@ -436,6 +436,8 @@ pub enum Fragment {
         image_data: Option<MediaEntry>,
         /// §20.1.10.48 `a:srcRect` — fractional source crop in `[0, 1]`.
         src_rect: Option<PtRect>,
+        /// §20.1.8.4 `a:alphaModFix`: opacity in `[0, 1]`.
+        opacity: f32,
     },
     /// §22.1 `m:f` — a numerator / rule / denominator stack, pre-measured so
     /// line fitting sees one atom. `metrics` is synthesized: the ascent
@@ -819,6 +821,7 @@ mod mark_line_tests {
             rel_id: "rId1".into(),
             image_data: None,
             src_rect: None,
+            opacity: 1.0,
         }
     }
 

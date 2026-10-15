@@ -393,6 +393,11 @@ pub struct Blip {
     pub link: Option<RelId>,
     /// §20.1.10.7: compression state.
     pub compression: Option<BlipCompression>,
+    /// §20.1.8.4 `a:alphaModFix/@amt`: the opacity the picture is drawn at,
+    /// a `ST_PositiveFixedPercentage` (100000 = opaque). `None` when absent,
+    /// which is opaque. Word's "Transparency" slider on a picture writes it —
+    /// a watermark seal at `amt="5000"` is drawn at 5%.
+    pub alpha_mod_fix: Option<Dimension<ThousandthPercent>>,
 }
 
 /// §20.1.10.7 ST_BlipCompression.

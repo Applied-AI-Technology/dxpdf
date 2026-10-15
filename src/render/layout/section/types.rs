@@ -98,6 +98,8 @@ pub struct FloatingImage {
     pub size: PtSize,
     /// §20.1.10.48 `a:srcRect` — fractional source crop in `[0, 1]`.
     pub src_rect: Option<crate::render::geometry::PtRect>,
+    /// §20.1.8.4 `a:alphaModFix`: opacity in `[0, 1]`.
+    pub opacity: f32,
     /// Horizontal position, possibly deferred to the page's parity.
     pub x: FloatingImageX,
     /// Resolved absolute y position on the page (may be relative to paragraph).
