@@ -680,7 +680,7 @@ mod tests {
         let b = tp.borders.cloned().unwrap();
         assert_eq!(b.top.unwrap().style, BorderStyle::Single);
         assert_eq!(b.left.unwrap().style, BorderStyle::Double);
-        assert_eq!(tp.cell_margins.cloned().unwrap().top.raw(), 100);
+        assert_eq!(tp.cell_margins.cloned().unwrap().top.unwrap().raw(), 100);
     }
 
     #[test]

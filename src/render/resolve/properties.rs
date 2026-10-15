@@ -849,7 +849,6 @@ mod tests {
     /// overlay coverage tests below — one place to add a new field to, which is
     /// what makes forgetting one a failure in both directions.
     fn every_table_property() -> TableProperties {
-        use crate::model::geometry::EdgeInsets;
         TableProperties {
             style_id: Some(StyleId::new("Ignored")),
             alignment: Dup::from(Some(Alignment::Center)),
@@ -864,12 +863,12 @@ mod tests {
                 inside_h: None,
                 inside_v: None,
             })),
-            cell_margins: Dup::from(Some(EdgeInsets {
-                top: Dimension::new(1),
-                right: Dimension::new(2),
-                bottom: Dimension::new(3),
-                left: Dimension::new(4),
-            })),
+            cell_margins: Dup::from(Some(crate::model::geometry::PartialEdgeInsets::new(
+                Some(Dimension::new(1)),
+                Some(Dimension::new(2)),
+                Some(Dimension::new(3)),
+                Some(Dimension::new(4)),
+            ))),
             cell_spacing: Dup::from(Some(TableMeasure::Twips(Dimension::new(30)))),
             look: Dup::from(Some(TableLook {
                 first_row: Some(true),
@@ -1238,15 +1237,14 @@ mod tests {
     /// what the overlay specifies wins, and what it omits falls through.
     #[test]
     fn table_properties_overlay_wins_but_only_where_specified() {
-        use crate::model::geometry::EdgeInsets;
         let base = TableProperties {
             alignment: Dup::from(Some(Alignment::Start)),
-            cell_margins: Dup::from(Some(EdgeInsets {
-                top: Dimension::new(9),
-                right: Dimension::new(9),
-                bottom: Dimension::new(9),
-                left: Dimension::new(9),
-            })),
+            cell_margins: Dup::from(Some(crate::model::geometry::PartialEdgeInsets::new(
+                Some(Dimension::new(9)),
+                Some(Dimension::new(9)),
+                Some(Dimension::new(9)),
+                Some(Dimension::new(9)),
+            ))),
             ..Default::default()
         };
         let overlay = TableProperties {

@@ -1,7 +1,7 @@
 //! Table types — table, row, cell properties, borders, positioning.
 
 use crate::model::dimension::{Dimension, FiftiethPercent, Twips};
-use crate::model::geometry::{EdgeInsets, PartialEdgeInsets};
+use crate::model::geometry::PartialEdgeInsets;
 use crate::model::Dup;
 
 use super::content::Block;
@@ -28,7 +28,11 @@ pub struct TableProperties {
     pub layout: Dup<TableLayout>,
     pub indent: Dup<TableMeasure>,
     pub borders: Dup<TableBorders>,
-    pub cell_margins: Dup<EdgeInsets<Twips>>,
+    /// §17.4.42 `w:tblCellMar`, per side **as declared**: a side the element
+    /// leaves out is `None` and inherits from the table style, while a side it
+    /// sets to `0` is `Some(0)` and overrides one. A zero-filled `EdgeInsets`
+    /// could not tell those apart, and read every explicit `0` as absent.
+    pub cell_margins: Dup<PartialEdgeInsets<Twips>>,
     pub cell_spacing: Dup<TableMeasure>,
     pub look: Dup<TableLook>,
     /// §17.7.6.7: number of rows in each row band for conditional formatting.

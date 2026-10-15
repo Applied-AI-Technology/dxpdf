@@ -574,38 +574,20 @@ pub(super) fn build_table(
 
     // §17.4.42: default cell margins from table style cascade.
     let style_cell_margins = style_table.and_then(|tp| tp.cell_margins.cloned());
-    // Per-edge merge: direct tblCellMar overrides style per-edge, with
-    // unspecified edges (value 0) falling back to the style's value.
-    // Word merges per-edge rather than replacing the entire set.
+    // Per-edge merge: a side the direct `tblCellMar` declares wins, even at
+    // `0`; a side it leaves out falls back to the style's. Word merges per
+    // edge rather than replacing the set — and an explicit zero is a value:
+    // `shellfishPermitCards.docx` nests `TableGrid` tables (whose base,
+    // `TableNormal`, carries 108-twip sides) under `<w:left w:w="0"/>`, and
+    // Word puts their text on the table's edge. A style's own undeclared
+    // sides are zero, as they always were.
+    let style_cell_margins = style_cell_margins
+        .map(|style| style.resolve_against(crate::model::geometry::EdgeInsets::ZERO));
     let default_cell_margins = match (t.properties.cell_margins.cloned(), style_cell_margins) {
-        (Some(direct), Some(style)) => {
-            use crate::model::geometry::EdgeInsets;
-            Some(EdgeInsets {
-                top: if direct.top.raw() != 0 {
-                    direct.top
-                } else {
-                    style.top
-                },
-                bottom: if direct.bottom.raw() != 0 {
-                    direct.bottom
-                } else {
-                    style.bottom
-                },
-                left: if direct.left.raw() != 0 {
-                    direct.left
-                } else {
-                    style.left
-                },
-                right: if direct.right.raw() != 0 {
-                    direct.right
-                } else {
-                    style.right
-                },
-            })
+        (Some(direct), style) => {
+            Some(direct.resolve_against(style.unwrap_or(crate::model::geometry::EdgeInsets::ZERO)))
         }
-        (Some(direct), None) => Some(direct),
-        (None, Some(style)) => Some(style),
-        (None, None) => None,
+        (None, style) => style,
     };
 
     // Each property read once here, so the several sites below cannot disagree
@@ -2311,12 +2293,12 @@ mod tests {
         right: i64,
         bottom: i64,
         left: i64,
-    ) -> crate::model::geometry::EdgeInsets<Twips> {
-        crate::model::geometry::EdgeInsets::new(
-            Dimension::new(top),
-            Dimension::new(right),
-            Dimension::new(bottom),
-            Dimension::new(left),
+    ) -> crate::model::geometry::PartialEdgeInsets<Twips> {
+        crate::model::geometry::PartialEdgeInsets::new(
+            Some(Dimension::new(top)),
+            Some(Dimension::new(right)),
+            Some(Dimension::new(bottom)),
+            Some(Dimension::new(left)),
         )
     }
 
@@ -2664,13 +2646,9 @@ mod tests {
     /// resolved the cell against the style rather than against the merged
     /// default, lands a different number on three of the four sides.
     ///
-    /// The table level cannot tell an absent side from an explicit zero —
-    /// `<w:tblCellMar>` parses to a whole `EdgeInsets`, missing sides collapsed
-    /// to 0 because §17.4.42 gives a table default no further inheritance — so
-    /// the merge reads 0 as "unstated". That is a limit of the model rather
-    /// than a choice made here, and its one visible consequence is that
-    /// `<w:left w:w="0"/>` on a `<w:tbl>` cannot override a style's non-zero
-    /// left. Stated, not asserted.
+    /// The table level keeps which sides `<w:tblCellMar>` states, so a side it
+    /// leaves out inherits the style's and one it states at `0` overrides it —
+    /// the next test.
     #[test]
     fn cell_margins_cascade_per_side_from_the_style_through_the_table_to_the_cell() {
         let style = plain_style(model::TableProperties {
@@ -2680,8 +2658,13 @@ mod tests {
         let props = model::TableProperties {
             style_id: Some(model::StyleId::new("T")),
             width: measure(dxa(4000)),
-            // Only `left` is stated; the other three are the parse seam's zero.
-            cell_margins: model::Dup::from(Some(cell_mar(0, 0, 0, 800))),
+            // Only `left` is stated.
+            cell_margins: model::Dup::from(Some(crate::model::geometry::PartialEdgeInsets::new(
+                None,
+                None,
+                None,
+                Some(Dimension::new(800)),
+            ))),
             ..Default::default()
         };
         let mut t = table_of(props, &[4000], 1);
@@ -2703,6 +2686,36 @@ mod tests {
         );
         assert_pt(m.bottom, 15.0, "the style's 300, likewise");
         assert_pt(m.left, 40.0, "the table's 800 over the style's 400");
+    }
+
+    /// §17.4.42: a side `<w:tblCellMar>` states at `0` is a value, not an
+    /// absence — it overrides the style's side. Word puts the text of
+    /// `shellfishPermitCards.docx`'s nested `TableGrid` tables (whose base
+    /// `TableNormal` carries 108-twip sides) on the table's edge under
+    /// `<w:left w:w="0"/><w:right w:w="0"/>`; reading the zeros as unstated
+    /// inset every card 5.4pt on both sides and broke its labels mid-word.
+    #[test]
+    fn a_cell_margin_stated_as_zero_overrides_the_style() {
+        let style = plain_style(model::TableProperties {
+            cell_margins: model::Dup::from(Some(cell_mar(0, 108, 0, 108))),
+            ..Default::default()
+        });
+        let props = model::TableProperties {
+            style_id: Some(model::StyleId::new("T")),
+            width: measure(dxa(4000)),
+            cell_margins: model::Dup::from(Some(crate::model::geometry::PartialEdgeInsets::new(
+                None,
+                Some(Dimension::new(0)),
+                None,
+                Some(Dimension::new(0)),
+            ))),
+            ..Default::default()
+        };
+        let t = table_of(props, &[4000], 1);
+        let built = build_offered(&t, OFFERED, &[("T", style)]);
+        let m = built.rows[0].cells[0].margins;
+        assert_pt(m.left, 0.0, "the table's stated 0 over the style's 108");
+        assert_pt(m.right, 0.0, "likewise on the right");
     }
 
     /// §17.4.57: which of `<w:tblpPr>`'s ten attributes reach layout.
