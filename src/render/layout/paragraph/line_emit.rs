@@ -3,9 +3,10 @@
 use std::rc::Rc;
 
 use super::super::draw_command::{DrawCommand, OutlineMark};
-use super::super::fragment::{Fragment, LinkTarget};
+use super::super::fragment::{Fragment, LineBreakOrigin, LinkTarget};
 use super::types::{LineSpacingRule, MeasureTextFn, ParagraphStyle, TabStopDef};
 use super::{LineLayoutParams, LinePlacement, LEADER_CHAR_WIDTH_FALLBACK};
+use crate::model::BreakClear;
 use crate::render::dimension::Pt;
 use crate::render::geometry::PtOffset;
 
@@ -61,6 +62,8 @@ pub(super) fn compute_line_placements(
             line,
             float_left: Pt::ZERO,
             float_right: Pt::ZERO,
+            // No floats, so a clearing break has nothing to clear.
+            clear_after: Pt::ZERO,
         })
         .collect();
     }
@@ -141,13 +144,37 @@ pub(super) fn compute_line_placements(
         };
         let lh = resolve_line_height(natural, text_h, &style.line_spacing, style.auto_fit);
 
+        // §17.3.3.1 `w:clear`: a line ended by a clearing break is followed
+        // by the first line clear of the floats it names, not the next one.
+        let clear_after = match fragments[..fitted_line.end].last() {
+            Some(Fragment::LineBreak {
+                origin: LineBreakOrigin::Authored(clear),
+                ..
+            }) if *clear != BreakClear::None => {
+                let next_y = style.page_y + line_y + lh;
+                let clear_left = matches!(clear, BreakClear::Left | BreakClear::All);
+                let clear_right = matches!(clear, BreakClear::Right | BreakClear::All);
+                super::super::float::clear_below(
+                    &style.page_floats,
+                    clear_left,
+                    clear_right,
+                    next_y,
+                    default_line_height,
+                    style.page_x,
+                    style.page_content_width,
+                ) - next_y
+            }
+            _ => Pt::ZERO,
+        };
+
         frag_idx = fitted_line.end;
         placements.push(LinePlacement {
             line: fitted_line,
             float_left: fl,
             float_right: fr,
+            clear_after,
         });
-        line_y += lh;
+        line_y += lh + clear_after;
     }
     placements
 }
@@ -1310,7 +1337,7 @@ pub(super) fn emit_line_commands(
             );
         }
 
-        *cursor_y += line_height;
+        *cursor_y += line_height + lp.clear_after;
     }
 
     if outline.is_some() {

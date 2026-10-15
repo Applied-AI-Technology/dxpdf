@@ -104,6 +104,80 @@ impl ActiveFloat {
     }
 }
 
+impl ActiveFloat {
+    /// Whether this float takes its width from the **left** of the text
+    /// column (text flows to its right) rather than from the right — the one
+    /// decision both line narrowing and §17.3.3.1 `w:clear` act on.
+    ///
+    /// Per `wrap_text`:
+    ///  * `Left`     → text on the left of the float → narrow from the right.
+    ///  * `Right`    → text on the right of the float → narrow from the left.
+    ///  * `Largest`  → keep the larger remaining side; narrow the smaller.
+    ///  * `BothSides`→ narrow the side the float is closer to.
+    fn narrows_left(&self, page_x: Pt, content_width: Pt) -> bool {
+        let content_right = page_x + content_width;
+        match self.wrap_text {
+            WrapTextSide::Right => true,
+            WrapTextSide::Left => false,
+            WrapTextSide::Largest => {
+                let left_remaining = self.page_x - page_x;
+                let right_remaining = content_right - (self.page_x + self.width);
+                left_remaining < right_remaining
+            }
+            WrapTextSide::BothSides => {
+                let content_center = page_x + content_width * 0.5;
+                let float_center = self.page_x + self.width * 0.5;
+                float_center < content_center
+            }
+        }
+    }
+}
+
+/// §17.3.3.1 `w:clear` (§17.18.3 `ST_BrClear`): the y at which a line that
+/// follows a clearing break may start — the first position, at or below
+/// `line_y`, where a line `line_height` tall meets no float on a cleared side.
+///
+/// A side is the side of the column a float narrows ([`ActiveFloat`]'s
+/// `narrows_left`), so `left` clears a float the text flows to the right of,
+/// and a float on the other side is left beside the text. Measured in Word
+/// against `test-files/break-clear.docx`: a left float is cleared by `all` and
+/// `left` and not by `right`, a right float by `all` and `right` and not by
+/// `left`, and the cleared line starts exactly at the float's bottom.
+///
+/// Iterates, because moving below one float can land the line beside another
+/// that starts lower down.
+pub fn clear_below(
+    floats: &[ActiveFloat],
+    clear_left: bool,
+    clear_right: bool,
+    line_y: Pt,
+    line_height: Pt,
+    page_x: Pt,
+    content_width: Pt,
+) -> Pt {
+    let mut y = line_y;
+    loop {
+        let blocking = floats
+            .iter()
+            .filter(|f| y + line_height > f.page_y_start && y < f.page_y_end)
+            .filter(|f| {
+                if f.narrows_left(page_x, content_width) {
+                    clear_left
+                } else {
+                    clear_right
+                }
+            })
+            .map(|f| f.page_y_end)
+            .fold(None, |acc: Option<Pt>, end| {
+                Some(acc.map_or(end, |a| a.max(end)))
+            });
+        match blocking {
+            Some(end) if end > y => y = end,
+            _ => return y,
+        }
+    }
+}
+
 /// Compute how much the available width should be reduced on a given line
 /// due to active floating images.
 ///
@@ -149,27 +223,7 @@ pub fn float_adjustments_with_height(
         let left_shift = (float_right_edge - page_x).max(Pt::ZERO);
         let right_shift = (content_right - float.page_x).max(Pt::ZERO);
 
-        // Choose the side to narrow per `wrap_text`.
-        //  * `Left`     → text on the left of the float → narrow from the right.
-        //  * `Right`    → text on the right of the float → narrow from the left.
-        //  * `Largest`  → keep the larger remaining side; narrow the smaller.
-        //  * `BothSides`→ narrow the side the float is closer to.
-        let narrow_left = match float.wrap_text {
-            WrapTextSide::Right => true,
-            WrapTextSide::Left => false,
-            WrapTextSide::Largest => {
-                let left_remaining = float.page_x - page_x;
-                let right_remaining = content_right - float_right_edge;
-                left_remaining < right_remaining
-            }
-            WrapTextSide::BothSides => {
-                let content_center = page_x + content_width * 0.5;
-                let float_center = float.page_x + float.width * 0.5;
-                float_center < content_center
-            }
-        };
-
-        if narrow_left {
+        if float.narrows_left(page_x, content_width) {
             if left_shift > indent_left {
                 indent_left = left_shift;
             }

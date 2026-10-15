@@ -39,6 +39,12 @@ struct LinePlacement {
     float_left: Pt,
     /// Width stolen from the right by an active float.
     float_right: Pt,
+    /// §17.3.3.1 `w:clear`: space below this line's own height that a
+    /// clearing break ending it skips, so the next line starts below the
+    /// floats it clears. Charged to this line rather than the next, so every
+    /// consumer of [`PlacedParagraph::line_height`] — emission, the split cut
+    /// model — sees one height for one line. Zero for every other line.
+    clear_after: Pt,
 }
 
 /// Shared layout parameters threaded through `compute_line_placements` and
@@ -258,7 +264,7 @@ pub(crate) fn place_paragraph<'a>(
                     y += lp.line.ascent;
                     break;
                 }
-                y += lh;
+                y += lh + lp.clear_after;
             }
             Some(y)
         }
@@ -281,6 +287,7 @@ pub(crate) fn place_paragraph<'a>(
                 default_line_height
             };
             resolve_line_height(natural, text_h, &style.line_spacing, style.auto_fit)
+                + lp.clear_after
         })
         .collect();
 
