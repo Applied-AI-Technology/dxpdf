@@ -14,6 +14,7 @@ use super::text::{
     emit_emoji_or_fallback, emit_text_fragments, emit_text_unit, emit_text_words,
     resolve_highlight_color, TextRunStyle,
 };
+use super::LineBreakOrigin;
 use super::{
     font_props_from_run, to_roman_lower, BreakAfter, FontProps, Fragment, FragmentBorder,
     LinkTarget, TextMetrics, SUBSCRIPT_HEIGHT_OFFSET_RATIO, SUPERSCRIPT_ASCENT_OFFSET_RATIO,
@@ -829,9 +830,24 @@ where
                                         color: text_style.color,
                                     });
                                 }
-                                RunElement::LineBreak(_) => {
+                                RunElement::LineBreak(kind) => {
+                                    // The break's line is a line of its run's
+                                    // font: a line holding nothing else is as
+                                    // tall as one of text in that face, not
+                                    // the bare em the font size is (Word: a
+                                    // break-only 12pt Times line is 13.8pt,
+                                    // `test-files/break-clear.docx` case 8).
+                                    let line_height = ctx.measurer.map_or(font.size, |m| {
+                                        m.default_line_height(&font.family, font.size)
+                                    });
                                     fragments.push(Fragment::LineBreak {
-                                        line_height: font.size,
+                                        line_height,
+                                        origin: LineBreakOrigin::Authored(match kind {
+                                            crate::model::BreakKind::TextWrapping => {
+                                                crate::model::BreakClear::None
+                                            }
+                                            crate::model::BreakKind::Clear(clear) => *clear,
+                                        }),
                                     });
                                 }
                                 RunElement::PageBreak => {

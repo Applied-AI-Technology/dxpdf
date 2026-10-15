@@ -5,7 +5,8 @@ use crate::i18n::bidi::BidiLevel;
 use crate::model::{self, Block, Paragraph};
 use crate::render::dimension::Pt;
 use crate::render::layout::fragment::{
-    collect_fragments, font_props_from_run, FontProps, Fragment, FragmentCtx, MarkLine,
+    collect_fragments, font_props_from_run, FontProps, Fragment, FragmentCtx, LineBreakOrigin,
+    MarkLine,
 };
 use crate::render::layout::paragraph::DropCapInfo;
 use crate::render::layout::section::LayoutBlock;
@@ -99,7 +100,8 @@ pub(super) fn build_paragraph_block(
     // function, so genuinely structural terminators never reach us.
     // Headers/footers have their own injection in
     // `build_header_footer_content` (§17.10.1) and do not call this.
-    if MarkLine::of(&fragments) == MarkLine::NeedsOwnLine {
+    let mark_line = MarkLine::of(&fragments);
+    if mark_line != MarkLine::RidesContent {
         let (family, size, ..) = resolve_paragraph_defaults(
             p,
             ctx.resolved,
@@ -146,7 +148,18 @@ pub(super) fn build_paragraph_block(
         // that follows a break, pushing 602 pt of photo table into a 629 pt
         // band until the *next* paragraph spills instead. 34 pages against 23.
         // The ordering here is the one both renderers agree on.
-        fragments.insert(0, Fragment::LineBreak { line_height });
+        let mark = Fragment::LineBreak {
+            line_height,
+            origin: LineBreakOrigin::ParagraphMark,
+        };
+        match mark_line {
+            MarkLine::NeedsOwnLine => fragments.insert(0, mark),
+            // Right after the break rather than at the very end, so it stays
+            // ahead of a page break that follows — on the page the break's own
+            // line is offered to, for the reason the front insertion above is.
+            MarkLine::AfterBreak(at) => fragments.insert(at, mark),
+            MarkLine::RidesContent => unreachable!("excluded by the guard above"),
+        }
     }
 
     // Word suppresses Hyperlink character style (blue/underline) for ToC
@@ -773,7 +786,7 @@ mod tests {
                 panic!("expected a paragraph block");
             };
             assert!(
-                matches!(fragments.as_slice(), [Fragment::LineBreak { line_height }] if line_height.raw() > 0.0),
+                matches!(fragments.as_slice(), [Fragment::LineBreak { line_height, .. }] if line_height.raw() > 0.0),
                 "exactly one LineBreak with a real height"
             );
         });
@@ -809,7 +822,7 @@ mod tests {
             assert!(
                 matches!(
                     fragments.as_slice(),
-                    [Fragment::LineBreak { line_height }, Fragment::PageBreak { .. }]
+                    [Fragment::LineBreak { line_height, .. }, Fragment::PageBreak { .. }]
                         if line_height.raw() > 0.0
                 ),
                 "line then break, in that order: {fragments:?}",
@@ -862,7 +875,7 @@ mod tests {
             let LayoutBlock::Paragraph { fragments, .. } = block else {
                 panic!("expected a paragraph block");
             };
-            let Some(Fragment::LineBreak { line_height }) = fragments.first() else {
+            let Some(Fragment::LineBreak { line_height, .. }) = fragments.first() else {
                 panic!("expected an injected mark line: {fragments:?}");
             };
             assert_eq!(

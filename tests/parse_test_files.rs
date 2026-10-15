@@ -440,6 +440,7 @@ const ALL_FILES: &[&str] = &[
     "picture-transparency.docx",
     "anchor-in-cell.docx",
     "anchor-valign.docx",
+    "break-clear.docx",
 ];
 
 #[test]

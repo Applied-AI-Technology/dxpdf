@@ -432,6 +432,7 @@ mod tests {
             LayoutBlock::Paragraph {
                 fragments: vec![Fragment::LineBreak {
                     line_height: Pt::new(14.0),
+                    origin: crate::render::layout::fragment::LineBreakOrigin::ParagraphMark,
                 }],
                 style: ParagraphStyle::default(),
                 page_break_before: false,
@@ -477,6 +478,7 @@ mod tests {
             LayoutBlock::Paragraph {
                 fragments: vec![Fragment::LineBreak {
                     line_height: Pt::new(14.0),
+                    origin: crate::render::layout::fragment::LineBreakOrigin::ParagraphMark,
                 }],
                 style: ParagraphStyle::default(),
                 page_break_before: false,
@@ -2547,6 +2549,7 @@ mod tests {
                                     text_frag(&format!("row0-{i}"), 30.0, 14.0),
                                     Fragment::LineBreak {
                                         line_height: Pt::new(14.0),
+                                        origin: crate::render::layout::fragment::LineBreakOrigin::Authored(crate::model::BreakClear::None),
                                     },
                                 ]
                             })

@@ -667,6 +667,9 @@ mod tests {
             text_frag("before", 30.0),
             Fragment::LineBreak {
                 line_height: Pt::new(14.0),
+                origin: crate::render::layout::fragment::LineBreakOrigin::Authored(
+                    crate::model::BreakClear::None,
+                ),
             },
             text_frag("after", 25.0),
         ];

@@ -312,7 +312,10 @@ fn build_non_story_content(
                         }
                     }
                     let line_height = ctx.measurer.default_line_height(&family, size);
-                    frags.push(Fragment::LineBreak { line_height });
+                    frags.push(Fragment::LineBreak {
+                        line_height,
+                        origin: crate::render::layout::fragment::LineBreakOrigin::ParagraphMark,
+                    });
                 }
 
                 layout_blocks.push(LayoutBlock::Paragraph {

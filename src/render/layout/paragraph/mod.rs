@@ -1204,6 +1204,9 @@ mod tests {
             text_frag("beta", 25.0),
             Fragment::LineBreak {
                 line_height: Pt::new(14.0),
+                origin: crate::render::layout::fragment::LineBreakOrigin::Authored(
+                    crate::model::BreakClear::None,
+                ),
             },
             text_frag("gamma", 30.0),
         ];

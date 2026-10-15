@@ -3,7 +3,9 @@
 
 use std::rc::Rc;
 
-use crate::model::{PTabAlignment, PTabRelativeTo, RunProperties, TabLeader, UnderlineStyle};
+use crate::model::{
+    BreakClear, PTabAlignment, PTabRelativeTo, RunProperties, TabLeader, UnderlineStyle,
+};
 
 use crate::i18n::bidi::BidiLevel;
 use crate::render::dimension::Pt;
@@ -357,6 +359,23 @@ pub enum BreakAfter {
     Prohibited,
 }
 
+/// Where a [`Fragment::LineBreak`] came from.
+///
+/// The two are told apart because a paragraph that *ends* in an authored
+/// break gives its mark a line of its own after it — Word draws
+/// `text<w:br/>¶` as two lines (`test-files/break-clear.docx`, case 8) — and
+/// the line that supplies is itself a `LineBreak`. Without the distinction the
+/// rule would see its own output as another trailing break.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LineBreakOrigin {
+    /// A `<w:br w:type="textWrapping"/>` or `<w:cr/>` in the document, with its
+    /// §17.3.3.1 `w:clear` (§17.18.3 `ST_BrClear`): which floats the text after
+    /// it restarts below.
+    Authored(BreakClear),
+    /// The line the paragraph mark occupies, injected by layout.
+    ParagraphMark,
+}
+
 /// A measured fragment — the atomic unit for line fitting.
 #[derive(Clone, Debug)]
 pub enum Fragment {
@@ -526,19 +545,18 @@ pub enum Fragment {
         /// §17.3.1.38: text colour of the ptab's run.
         color: RgbColor,
     },
+    /// Ends a line: an authored §17.3.3.1 `<w:br/>` (or `<w:cr/>`), or the
+    /// line this engine makes for a paragraph mark (§17.3.1.29).
     LineBreak {
         line_height: Pt,
+        origin: LineBreakOrigin,
     },
     /// §17.3.3.1: column break — forces content to the next column.
     ColumnBreak,
     /// §17.3.3.1: page break — forces content to the next page.
-    PageBreak {
-        line_height: Pt,
-    },
+    PageBreak { line_height: Pt },
     /// Named destination (bookmark target) — zero-width marker.
-    Bookmark {
-        name: String,
-    },
+    Bookmark { name: String },
 }
 
 impl Fragment {
@@ -573,7 +591,7 @@ impl Fragment {
             Fragment::Emoji { line_metrics, .. } => line_metrics.height(),
             Fragment::Tab { line_height, .. }
             | Fragment::PTab { line_height, .. }
-            | Fragment::LineBreak { line_height }
+            | Fragment::LineBreak { line_height, .. }
             | Fragment::PageBreak { line_height } => *line_height,
             Fragment::ColumnBreak | Fragment::Bookmark { .. } => Pt::ZERO,
         }
@@ -672,15 +690,26 @@ pub enum MarkLine {
     RidesContent,
     /// Nothing in the paragraph draws. The mark needs a line of its own.
     NeedsOwnLine,
+    /// The last thing that takes a line is an authored `<w:br/>`, which ends
+    /// its line, so the mark is on the next one — Word draws `text<w:br/>¶` as
+    /// two lines and a lone `<w:br/>¶` as two empty ones
+    /// (`test-files/break-clear.docx`, case 8). Carries the index just after
+    /// that break, where the mark's line goes.
+    AfterBreak(usize),
 }
 
 impl MarkLine {
     /// Decide from a paragraph's fragments.
     pub fn of(fragments: &[Fragment]) -> Self {
-        if fragments.iter().any(Fragment::occupies_line) {
-            MarkLine::RidesContent
-        } else {
-            MarkLine::NeedsOwnLine
+        match fragments.iter().rposition(Fragment::occupies_line) {
+            None => MarkLine::NeedsOwnLine,
+            Some(i) => match fragments[i] {
+                Fragment::LineBreak {
+                    origin: LineBreakOrigin::Authored(_),
+                    ..
+                } => MarkLine::AfterBreak(i + 1),
+                _ => MarkLine::RidesContent,
+            },
         }
     }
 }
@@ -804,6 +833,7 @@ mod mark_line_tests {
     fn line_break() -> Fragment {
         Fragment::LineBreak {
             line_height: Pt::new(12.0),
+            origin: LineBreakOrigin::ParagraphMark,
         }
     }
 
