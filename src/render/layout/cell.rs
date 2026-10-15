@@ -16,6 +16,18 @@ pub struct CellLayout {
     pub commands: Vec<super::draw_command::DrawCommand>,
     /// Content height (without margins).
     pub content_height: Pt,
+    /// The height §17.4.83 `w:vAlign` aligns, without margins: the content's,
+    /// or further down where a `wrapNone` picture or shape reaches past it.
+    ///
+    /// Measured in Word against `test-files/anchor-valign.docx`: such an object
+    /// does not grow its row (`anchor-in-cell.docx`), but it *is* content when
+    /// the row's slack is shared out — a bottom-aligned paragraph carrying a
+    /// 30pt `wrapNone` picture stops 30pt short of the row's foot, the same as
+    /// one carrying a `wrapSquare` picture. And one that reaches past the row,
+    /// as the signature on every tenant's dog-license certificate does, leaves
+    /// no slack at all, so its paragraph stays at the top of a bottom-aligned
+    /// cell and the picture lands its anchor offset below the row's top.
+    pub align_height: Pt,
     /// §17.4.1 row-split cut model, in cell-content coordinates (i.e. *not*
     /// shifted by the cell margins — the splitter adds `margin_top`). Empty for
     /// a cell that can't be safely bisected; see [`CellLine`].
@@ -73,6 +85,7 @@ pub fn layout_cell(
     CellLayout {
         commands,
         content_height: result.height,
+        align_height: result.height.max(result.overlay_bottom),
         // Cut points stay in content coordinates; the shift above applies to
         // draw commands only. `split.rs` accounts for `margin_top` when
         // partitioning against them.

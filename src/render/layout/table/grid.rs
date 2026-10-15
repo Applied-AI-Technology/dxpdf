@@ -594,6 +594,7 @@ mod tests {
             layout: CellLayout {
                 commands: Vec::new(),
                 content_height: Pt::new(content_height),
+                align_height: Pt::new(content_height),
                 lines: Vec::new(),
             },
             cell_x: Pt::ZERO,

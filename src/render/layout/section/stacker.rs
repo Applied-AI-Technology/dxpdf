@@ -49,6 +49,11 @@ pub struct StackResult {
     pub commands: Vec<DrawCommand>,
     /// Total height consumed by all blocks.
     pub height: Pt,
+    /// How far below the stacking origin a `wrapNone` anchored object reaches
+    /// — the floats `height` deliberately leaves out. Zero when there are none.
+    /// A table cell aligns (§17.4.83 `w:vAlign`) on the larger of the two,
+    /// while sizing its row on `height` alone: see `CellLayout::align_height`.
+    pub overlay_bottom: Pt,
     /// Per-line cut model for §17.4.1 row splitting (cell-content coords).
     /// Empty when the content cannot be safely bisected (nested table or
     /// floating object present) — such cells move whole rather than split.
@@ -93,6 +98,7 @@ pub fn stack_blocks(
     // (nested table or floating object).
     let mut cell_lines: Vec<CellLine> = Vec::new();
     let mut splittable = true;
+    let mut overlay_bottom = Pt::ZERO;
 
     for (block_index, block) in blocks.iter().enumerate() {
         match block {
@@ -321,11 +327,13 @@ pub fn stack_blocks(
                     // Word draws a cell holding only such a picture at one
                     // empty line (`test-files/anchor-in-cell.docx`). That is
                     // the floating logo or seal that overhangs its cell.
+                    let img_bottom = img_y + fi.size.height;
                     if fi.wrap_mode.registers_as_wrap_float() {
-                        let img_bottom = img_y + fi.size.height;
                         if img_bottom > cursor_y {
                             cursor_y = img_bottom;
                         }
+                    } else {
+                        overlay_bottom = overlay_bottom.max(img_bottom);
                     }
                 }
 
@@ -339,6 +347,9 @@ pub fn stack_blocks(
                         continue;
                     }
                     let shape_y = fs.y.at(parity, para_content_top);
+                    if matches!(fs.wrap_mode, crate::render::layout::section::WrapMode::None) {
+                        overlay_bottom = overlay_bottom.max(shape_y + fs.size.height);
+                    }
                     commands.push(DrawCommand::Path {
                         origin: crate::render::geometry::PtOffset::new(
                             fs.x.resolve(parity),
@@ -426,6 +437,7 @@ pub fn stack_blocks(
     StackResult {
         commands,
         height: cursor_y,
+        overlay_bottom,
         lines: if splittable { cell_lines } else { Vec::new() },
     }
 }

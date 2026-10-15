@@ -295,9 +295,12 @@ pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
         // lines that actually remain.
         let (first_lines, second_lines) = partition_lines(&entry.layout.lines, cc);
         first_entries.push(CellLayoutEntry {
+            // A cell holding an anchored object is never bisected (its cut
+            // model is withheld), so neither half has an overlay to align on.
             layout: crate::render::layout::cell::CellLayout {
                 commands: first_cmds,
                 content_height: entry.layout.content_height.min(first_h),
+                align_height: entry.layout.content_height.min(first_h),
                 lines: first_lines,
             },
             cell_x: entry.cell_x,
@@ -312,6 +315,7 @@ pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
             layout: crate::render::layout::cell::CellLayout {
                 commands: second_cmds,
                 content_height: (entry.layout.content_height - cc.shift()).max(Pt::ZERO),
+                align_height: (entry.layout.content_height - cc.shift()).max(Pt::ZERO),
                 lines: second_lines,
             },
             cell_x: entry.cell_x,
@@ -681,6 +685,7 @@ mod tests {
             layout: crate::render::layout::cell::CellLayout {
                 commands: Vec::new(),
                 content_height: Pt::new(28.0),
+                align_height: Pt::new(28.0),
                 lines,
             },
             cell_x: Pt::ZERO,

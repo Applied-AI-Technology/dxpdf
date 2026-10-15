@@ -291,7 +291,7 @@ fn emit_one_row(
 
         // §17.4.84: for vMerge=Restart cells, vAlign operates over the whole
         // merged span (`effective_h`, computed above with the shading).
-        let content_h = entry.layout.content_height + cell_input.margins.vertical();
+        let content_h = entry.layout.align_height + cell_input.margins.vertical();
         let slack = (effective_h - content_h - dy_border - dy_bottom).max(Pt::ZERO);
         let dy_valign = match cell_input.vertical_align {
             CellVAlign::Bottom => slack,
