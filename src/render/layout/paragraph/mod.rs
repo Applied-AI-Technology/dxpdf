@@ -1828,15 +1828,16 @@ mod tests {
 
     #[test]
     fn resolve_line_height_auto_mixed_line() {
-        // Line with text (14pt) and image (100pt): multiplier scales text only.
-        // max(14*1.5=21, 100) = 100.
+        // Line with text (14pt) and image (100pt): the multiple scales the text
+        // and adds the difference, 100 + 14 × 0.5 — Word sets a 40pt picture
+        // and 11pt Calibri at 1.15 on 40 + 2.95 + 0.15 × 13.43.
         let h = resolve_line_height(
             Pt::new(100.0),
             Pt::new(14.0),
             &LineSpacingRule::Auto(1.5),
             crate::render::layout::ShapeAutoFit::NONE,
         );
-        assert_eq!(h.raw(), 100.0, "image dominates");
+        assert_eq!(h.raw(), 107.0, "the text's share of the multiple is added");
     }
 
     #[test]

@@ -1029,10 +1029,12 @@ pub(super) fn emit_line_commands(
                             * distribution_gap_count_after(fragments, &order, pos) as f32;
                     let x = pen.place(size.width, advance);
                     if let Some(data) = image_data {
+                        // An inline picture stands on the baseline — see
+                        // `LineMetrics`.
                         commands.push(DrawCommand::Image {
                             rect: crate::render::geometry::PtRect::from_xywh(
                                 x,
-                                *cursor_y,
+                                *cursor_y + baseline - size.height,
                                 size.width,
                                 size.height,
                             ),
@@ -1868,13 +1870,15 @@ pub(super) fn line_box(
     }
 }
 
-/// §17.3.1.33: resolve the effective line height from the natural height
-/// and the line spacing rule.
-///
-/// For Auto mode, the multiplier applies only to text metrics — inline
-/// images use their natural height without scaling. The final line height
-/// is `max(text_height * multiplier, total_height)`.
 /// §17.3.1.33 line height for one line, then §20.1.2.1.18 `@lnSpcReduction`.
+///
+/// An Auto multiple scales the line's **text** height and adds the difference
+/// to its natural height, so an inline picture is not scaled with it: Word
+/// (Word for Mac 16, 2026-10-16) sets a 40pt picture and 11pt Calibri at 1.15
+/// on a 44.9pt line — the picture, Calibri's descent, and 15% of Calibri's
+/// 13.43pt — and a picture alone on 42pt, 15% of the paragraph mark's line
+/// above its own height. For a line of text alone the two heights are one and
+/// this is the text height times the multiple.
 ///
 /// `auto_fit` is a parameter rather than something callers apply afterwards
 /// because four separate places resolve a line height — fitting, emission,
@@ -1890,11 +1894,10 @@ pub(super) fn resolve_line_height(
     auto_fit: crate::render::layout::ShapeAutoFit,
 ) -> Pt {
     let resolved = match rule {
+        // Floored at the natural height: a multiple below 1 is unmeasured, and
+        // the floor is what keeps an authored one from colliding glyph boxes.
         LineSpacingRule::Auto(multiplier) => {
-            let scaled_text = text_height * *multiplier;
-            // Use the scaled text height or the full natural height (which
-            // includes images), whichever is larger.
-            scaled_text.max(natural)
+            (natural + text_height * (*multiplier - 1.0)).max(natural)
         }
         LineSpacingRule::Exact(h) => *h,
         LineSpacingRule::AtLeast(min) => natural.max(*min),

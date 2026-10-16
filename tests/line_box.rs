@@ -124,3 +124,92 @@ fn a_cell_line_takes_its_gap_above_it() {
         a - r
     );
 }
+
+/// The inline pictures' (page, top, bottom), in document order.
+fn pictures(pages: &[LayoutedPage]) -> Vec<(usize, f32, f32)> {
+    pages
+        .iter()
+        .enumerate()
+        .flat_map(|(i, p)| p.commands.iter().map(move |c| (i, c)))
+        .filter_map(|(i, c)| match c {
+            DrawCommand::Image { rect, .. } => Some((
+                i,
+                rect.origin.y.raw(),
+                rect.origin.y.raw() + rect.size.height.raw(),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An 11pt "Calibri" line — the inline fixture's paragraphs and references.
+const LINE: f32 = 0.95 * 11.0 + 0.25 * 11.0;
+
+/// An inline picture stands on the baseline: text beside a 40pt picture sits
+/// on its foot, and the line is the picture and the text's descent; a 6pt
+/// picture sits on the baseline of a line it does not raise; a picture alone
+/// is exactly its own height. Word: I2's text 42.96 below R02 and on the
+/// picture's foot, R03 13.20 below it; I3's picture's foot on the baseline;
+/// R01 to R02 53.52, the picture and the two references' reach.
+#[test]
+fn an_inline_picture_stands_on_the_baseline() {
+    let p = pages("line-box-inline.docx");
+    let pics = pictures(&p);
+    assert_gap(&p, "R01", "R02", REF.1 + 40.0 + REF.0, "a picture alone");
+    assert_gap(
+        &p,
+        "R02",
+        "I2a",
+        REF.1 + 40.0,
+        "the text on the picture's foot",
+    );
+    assert_gap(&p, "I2a", "R03", REF.1 + REF.0, "then the text's descent");
+    let (_, i2) = at(&p, "I2a");
+    assert!(
+        (pics[1].2 - i2).abs() < 0.01,
+        "I2's picture ends on the baseline"
+    );
+    let (_, i3) = at(&p, "I3a");
+    assert!(
+        (pics[2].2 - i3).abs() < 0.01,
+        "I3's 6pt picture ends on the baseline"
+    );
+    assert_gap(
+        &p,
+        "R03",
+        "I3a",
+        REF.1 + REF.0,
+        "and does not raise the line",
+    );
+}
+
+/// An Auto multiple scales a line's text height and adds the difference, so a
+/// picture is not scaled with it. Word: a 40pt picture alone at 1.15 (I4) on a
+/// 42.0pt line, 15% of the paragraph mark's 13.43pt over the picture; the
+/// picture beside 11pt text (I9) on 44.89, the picture, the descent and 15%.
+#[test]
+fn a_multiple_adds_the_text_s_share() {
+    let p = pages("line-box-inline.docx");
+    let extra = 0.15 * LINE;
+    assert_gap(
+        &p,
+        "R04",
+        "R05",
+        REF.1 + 40.0 + extra + REF.0,
+        "a picture alone",
+    );
+    assert_gap(
+        &p,
+        "R09",
+        "I9a",
+        REF.1 + 40.0,
+        "the text on the picture's foot",
+    );
+    assert_gap(
+        &p,
+        "I9a",
+        "R10",
+        REF.1 + extra + REF.0,
+        "the share below it",
+    );
+}

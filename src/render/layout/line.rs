@@ -324,7 +324,10 @@ pub fn fit_lines_with_first(
 ///   descent below. The line gap (`hhea` `lineGap`, which Skia reports as
 ///   leading) is **above** the text — a 22pt Arial line's first baseline sits
 ///   0.72pt lower than its ascent alone puts it, and nothing is added below.
-/// * An inline picture makes the line at least its own height.
+/// * An inline object stands **on** the baseline and reaches its own height
+///   above it, so text beside a 40pt picture sits on the picture's foot and the
+///   line is the picture and the text's descent. A picture alone on its line
+///   is exactly its own height.
 /// * A tab or a break makes it at least the height it carries.
 #[derive(Clone, Copy, Debug, Default)]
 struct LineMetrics {
@@ -337,9 +340,6 @@ struct LineMetrics {
     text_below: Pt,
     /// Fragments that carry only a height (tabs, breaks), counted toward both.
     other: Pt,
-    /// The tallest inline picture, which counts toward the line's height and
-    /// not its text height.
-    picture: Pt,
 }
 
 impl LineMetrics {
@@ -349,7 +349,7 @@ impl LineMetrics {
                 self.add_text(metrics)
             }
             Fragment::Emoji { line_metrics, .. } => self.add_text(line_metrics),
-            Fragment::Image { size, .. } => self.picture = self.picture.max(size.height),
+            Fragment::Image { size, .. } => self.above = self.above.max(size.height),
             f => self.other = self.other.max(f.height()),
         }
     }
@@ -363,7 +363,7 @@ impl LineMetrics {
     }
 
     fn height(&self) -> Pt {
-        (self.above + self.below).max(self.other).max(self.picture)
+        (self.above + self.below).max(self.other)
     }
 
     fn text_height(&self) -> Pt {
