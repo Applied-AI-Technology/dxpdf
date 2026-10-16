@@ -338,7 +338,71 @@ def main() -> None:
     # `build_ligated_unnamed`.
     write(build_ligated_unnamed(), "DxLigaUnnamed.ttf")
 
+    # ── Two faces that differ only in their vertical metrics ─────────────
+    #
+    # One with a line gap and one without, as Arial and Calibri differ. See
+    # `build_line_metrics`.
+    write(build_line_metrics("Dx No Gap", ascent=950, descent=250, line_gap=0), "DxNoGap.ttf")
+    write(build_line_metrics("Dx Line Gap", ascent=900, descent=200, line_gap=100), "DxLineGap.ttf")
+
     print("done — commit the results")
+
+
+def build_line_metrics(family: str, *, ascent: int, descent: int, line_gap: int) -> TTFont:
+    """Printable ASCII at 500 units each, with the vertical metrics given —
+    issue: where a line's box puts its font's line gap.
+
+    Word sets a face's `hhea` line gap above its text (`tests/line_box.rs`), and
+    the two real faces that settle it, Arial (a 0.0327em gap) and Calibri (none),
+    are not on every host. These stand in for them under their names: every
+    table that names an ascent, descent or gap — `hhea`, `OS/2` typo and win —
+    says the same, so CoreText and FreeType read one answer.
+    """
+    chars = [chr(c) for c in range(0x21, 0x7F)]
+    names = [".notdef", "space"] + [_glyph_name(c) for c in chars]
+    fb = FontBuilder(UPM, isTTF=True)
+    fb.setupGlyphOrder(names)
+    fb.setupCharacterMap({0x20: "space", **{ord(c): _glyph_name(c) for c in chars}})
+    glyphs = {}
+    for name in names:
+        pen = TTGlyphPen(None)
+        if name not in (".notdef", "space"):
+            pen.moveTo((50, 0))
+            pen.lineTo((50, 700))
+            pen.lineTo((450, 700))
+            pen.lineTo((450, 0))
+            pen.closePath()
+        glyphs[name] = pen.glyph()
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics({name: (500, 50) for name in names})
+    fb.setupHorizontalHeader(ascent=ascent, descent=-descent, lineGap=line_gap)
+    ps = family.replace(" ", "")
+    fb.setupNameTable(
+        {
+            "familyName": family,
+            "styleName": "Regular",
+            "fullName": f"{family} Regular",
+            "psName": f"{ps}-Regular",
+            "version": "Version 1.000",
+        }
+    )
+    fb.setupOS2(
+        version=3,
+        sTypoAscender=ascent,
+        sTypoDescender=-descent,
+        sTypoLineGap=line_gap,
+        usWinAscent=ascent,
+        usWinDescent=descent,
+        usWeightClass=400,
+        usWidthClass=5,
+        fsSelection=0b1000000,
+        achVendID="DXPD",
+    )
+    fb.setupPost()
+    fb.font["head"].created = EPOCH
+    fb.font["head"].modified = EPOCH
+    fb.font["head"].macStyle = 0
+    return fb.font
 
 
 # Arabic letter beh (U+0628), Joining_Type=D, in its four positional forms.

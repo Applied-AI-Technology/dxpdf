@@ -25,7 +25,9 @@ use crate::render::geometry::{PtOffset, PtRect, PtSize};
 use crate::render::layout::fragment::split_oversized_fragments;
 
 use borders::{emit_paragraph_borders_and_shading, emit_segment_borders_and_shading, SegmentEdges};
-use line_emit::{compute_line_placements, emit_line_commands, resolve_line_height};
+#[cfg(test)]
+use line_emit::resolve_line_height;
+use line_emit::{compute_line_placements, emit_line_commands, line_box};
 
 // ── Tab leader rendering constants ────────────────────────────────────────────
 
@@ -249,22 +251,17 @@ pub(crate) fn place_paragraph<'a>(
             let n = dc.lines.max(1) as usize;
             let mut y = style.space_before;
             for (i, lp) in line_placements.iter().enumerate().take(n) {
-                let natural = if lp.line.height > Pt::ZERO {
-                    lp.line.height
-                } else {
-                    default_line_height
-                };
-                let text_h = if lp.line.text_height > Pt::ZERO {
-                    lp.line.text_height
-                } else {
-                    default_line_height
-                };
-                let lh = resolve_line_height(natural, text_h, &style.line_spacing, style.auto_fit);
+                let lb = line_box(
+                    &lp.line,
+                    default_line_height,
+                    &style.line_spacing,
+                    style.auto_fit,
+                );
                 if i == n - 1 {
-                    y += lp.line.ascent;
+                    y += lb.baseline;
                     break;
                 }
-                y += lh + lp.clear_after;
+                y += lb.height + lp.clear_after;
             }
             Some(y)
         }
@@ -276,17 +273,13 @@ pub(crate) fn place_paragraph<'a>(
     let line_heights = line_placements
         .iter()
         .map(|lp| {
-            let natural = if lp.line.height > Pt::ZERO {
-                lp.line.height
-            } else {
-                default_line_height
-            };
-            let text_h = if lp.line.text_height > Pt::ZERO {
-                lp.line.text_height
-            } else {
-                default_line_height
-            };
-            resolve_line_height(natural, text_h, &style.line_spacing, style.auto_fit)
+            line_box(
+                &lp.line,
+                default_line_height,
+                &style.line_spacing,
+                style.auto_fit,
+            )
+            .height
                 + lp.clear_after
         })
         .collect();

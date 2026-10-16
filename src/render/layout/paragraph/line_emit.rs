@@ -132,17 +132,13 @@ pub(super) fn compute_line_placements(
             break;
         };
 
-        let natural = if fitted_line.height > Pt::ZERO {
-            fitted_line.height
-        } else {
-            default_line_height
-        };
-        let text_h = if fitted_line.text_height > Pt::ZERO {
-            fitted_line.text_height
-        } else {
-            default_line_height
-        };
-        let lh = resolve_line_height(natural, text_h, &style.line_spacing, style.auto_fit);
+        let lh = line_box(
+            &fitted_line,
+            default_line_height,
+            &style.line_spacing,
+            style.auto_fit,
+        )
+        .height;
 
         // §17.3.3.1 `w:clear`: a line ended by a clearing break is followed
         // by the first line clear of the floats it names, not the next one.
@@ -661,19 +657,12 @@ pub(super) fn emit_line_commands(
 
         let indent = physical_left_inset(style, line_idx == 0) + dc_offset + float_offset;
 
-        let natural_height = if line.height > Pt::ZERO {
-            line.height
-        } else {
-            default_line_height
-        };
-        let text_height = if line.text_height > Pt::ZERO {
-            line.text_height
-        } else {
-            default_line_height
-        };
-        let line_height = resolve_line_height(
-            natural_height,
-            text_height,
+        let LineBox {
+            height: line_height,
+            baseline,
+        } = line_box(
+            line,
+            default_line_height,
             &style.line_spacing,
             style.auto_fit,
         );
@@ -846,7 +835,7 @@ pub(super) fn emit_line_commands(
                     // the line's glyphs — see where those buffers are
                     // declared.
                     if let Some(shading) = shading {
-                        let text_top = *cursor_y + line.ascent - metrics.ascent;
+                        let text_top = *cursor_y + baseline - metrics.ascent;
                         let rect = crate::render::geometry::PtRect::from_xywh(
                             box_left,
                             text_top,
@@ -868,7 +857,7 @@ pub(super) fn emit_line_commands(
                     // §17.3.2.4: render run-level border (box around text).
                     // Uses text bounds, not full line height.
                     if let Some(bdr) = border {
-                        let text_top = *cursor_y + line.ascent - metrics.ascent;
+                        let text_top = *cursor_y + baseline - metrics.ascent;
                         let bx = box_left - bdr.space;
                         let by = text_top;
                         let bw = rendered_width + bdr.space * 2.0;
@@ -912,7 +901,7 @@ pub(super) fn emit_line_commands(
                         });
                     }
 
-                    let y = *cursor_y + line.ascent + *baseline_offset;
+                    let y = *cursor_y + baseline + *baseline_offset;
 
                     // §17.3.2.13/.18/.31 (issue #148): shadow and relief are
                     // extra `Text` commands laid *under* the main glyphs —
@@ -1086,7 +1075,7 @@ pub(super) fn emit_line_commands(
                             + distribution_extra
                                 * distribution_gap_count_after(fragments, &order, pos) as f32,
                     );
-                    let baseline = *cursor_y + line.ascent + *baseline_offset;
+                    let baseline = *cursor_y + baseline + *baseline_offset;
                     let rule = geometry.rule;
                     let gap = geometry.gap;
                     let pad = geometry.pad;
@@ -1165,7 +1154,7 @@ pub(super) fn emit_line_commands(
                     // Place the cluster's box so its top sits at the line
                     // baseline minus the typeface ascent, matching where text
                     // glyphs at the same baseline would sit.
-                    let baseline_y = *cursor_y + line.ascent + *baseline_offset;
+                    let baseline_y = *cursor_y + baseline + *baseline_offset;
                     let top_y = baseline_y - metrics.ascent;
                     commands.push(DrawCommand::EmojiCluster {
                         rect: crate::render::geometry::PtRect::from_xywh(
@@ -1236,7 +1225,7 @@ pub(super) fn emit_line_commands(
                             },
                             from,
                             to,
-                            *cursor_y + line.ascent,
+                            *cursor_y + baseline,
                             measure_text,
                         );
                     }
@@ -1313,7 +1302,7 @@ pub(super) fn emit_line_commands(
                         },
                         from,
                         to,
-                        *cursor_y + line.ascent,
+                        *cursor_y + baseline,
                         measure_text,
                     );
                 }
@@ -1839,6 +1828,44 @@ pub(super) fn emit_tab_leader(
         // glyphs, not the dots the tab fills with.
         outline: false,
     });
+}
+
+/// §17.3.1.33: a line's box under its paragraph's spacing rule — how tall it
+/// is, and how far below its top the baseline sits.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct LineBox {
+    pub(super) height: Pt,
+    pub(super) baseline: Pt,
+}
+
+/// The [`LineBox`] of `line`, falling back to `default_line_height` — the
+/// paragraph mark's line — for whichever of its two heights it lacks: an empty
+/// line has neither, a line holding only a picture has no text height.
+///
+/// The baseline is the line's own ascent ([`FittedLine::ascent`]) below its
+/// top, and whatever the rule adds goes below the text.
+///
+/// [`FittedLine::ascent`]: crate::render::layout::line::FittedLine::ascent
+pub(super) fn line_box(
+    line: &crate::render::layout::line::FittedLine,
+    default_line_height: Pt,
+    rule: &LineSpacingRule,
+    auto_fit: crate::render::layout::ShapeAutoFit,
+) -> LineBox {
+    let natural = if line.height > Pt::ZERO {
+        line.height
+    } else {
+        default_line_height
+    };
+    let text_height = if line.text_height > Pt::ZERO {
+        line.text_height
+    } else {
+        default_line_height
+    };
+    LineBox {
+        height: resolve_line_height(natural, text_height, rule, auto_fit),
+        baseline: line.ascent,
+    }
 }
 
 /// §17.3.1.33: resolve the effective line height from the natural height

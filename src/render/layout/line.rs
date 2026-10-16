@@ -11,13 +11,14 @@ pub struct FittedLine {
     pub end: usize,
     /// Total width of all fragments in this line.
     pub width: Pt,
-    /// Maximum height of any fragment in this line.
+    /// The line's natural height — `LineMetrics`: the most any fragment puts
+    /// above the baseline plus the most any puts below it.
     pub height: Pt,
-    /// Maximum height of text-only fragments on this line.
-    /// §17.3.1.33: Auto line spacing multiplier applies to text metrics,
-    /// not to inline image heights.
+    /// The same for text alone. §17.3.1.33: Auto line spacing multiplies text
+    /// metrics, not inline image heights.
     pub text_height: Pt,
-    /// Maximum ascent of any text fragment in this line.
+    /// How far the baseline sits below the top of the natural line: the most
+    /// any fragment puts above it.
     pub ascent: Pt,
     /// Whether this line ends with an explicit line break.
     pub has_break: bool,
@@ -100,9 +101,7 @@ pub fn fit_lines_with_first(
     // space a paragraph's own right indent excludes. Until then the ordinary
     // `content_width` bound applies.
     let mut margin_span_active = false;
-    let mut line_height = Pt::ZERO;
-    let mut line_text_height = Pt::ZERO;
-    let mut line_ascent = Pt::ZERO;
+    let mut metrics = LineMetrics::default();
     let mut last_break_point = None; // index after which we can break
 
     let mut i = 0;
@@ -110,26 +109,22 @@ pub fn fit_lines_with_first(
         let frag = &fragments[i];
 
         // Explicit line break — emit current line including the break fragment.
-        // LineBreak height already includes leading (from default_line_height).
         if frag.is_line_break() {
-            line_height = line_height.max(frag.height());
-            line_text_height = line_text_height.max(frag.height());
+            metrics.add(frag);
             lines.push(FittedLine {
                 start: line_start,
                 end: i + 1,
                 width: line_width,
-                height: line_height,
-                text_height: line_text_height,
-                ascent: line_ascent,
+                height: metrics.height(),
+                text_height: metrics.text_height(),
+                ascent: metrics.above,
                 has_break: true,
             });
             line_start = i + 1;
             line_width = Pt::ZERO;
             pen_x = line_pen_start(lines.is_empty());
             margin_span_active = false;
-            line_height = Pt::ZERO;
-            line_text_height = Pt::ZERO;
-            line_ascent = Pt::ZERO;
+            metrics = LineMetrics::default();
             last_break_point = None;
             i += 1;
             continue;
@@ -198,9 +193,7 @@ pub fn fit_lines_with_first(
                         line_width = Pt::ZERO;
                         pen_x = line_pen_start(lines.is_empty());
                         margin_span_active = false;
-                        line_height = Pt::ZERO;
-                        line_text_height = Pt::ZERO;
-                        line_ascent = Pt::ZERO;
+                        metrics = LineMetrics::default();
                         last_break_point = None;
                         // Re-evaluate this tab against the fresh line.
                         continue;
@@ -249,9 +242,7 @@ pub fn fit_lines_with_first(
             line_width = Pt::ZERO;
             pen_x = line_pen_start(lines.is_empty());
             margin_span_active = false;
-            line_height = Pt::ZERO;
-            line_text_height = Pt::ZERO;
-            line_ascent = Pt::ZERO;
+            metrics = LineMetrics::default();
             last_break_point = None;
             // Resume *at the break*, not at the fragment that overflowed.
             //
@@ -284,19 +275,7 @@ pub fn fit_lines_with_first(
         if !matches!(frag, Fragment::PTab { .. }) {
             pen_x += frag_width;
         }
-        line_height = line_height.max(frag.height());
-        // §17.3.1.33: text_height is the Auto line spacing base — use
-        // line_height() (includes leading) for text, glyph height for tabs.
-        match frag {
-            Fragment::Text { metrics, .. } | Fragment::MathFraction { metrics, .. } => {
-                line_text_height = line_text_height.max(metrics.line_height());
-                line_ascent = line_ascent.max(metrics.ascent);
-            }
-            Fragment::Image { .. } => {} // images don't contribute to text_height
-            _ => {
-                line_text_height = line_text_height.max(frag.height());
-            }
-        }
+        metrics.add(frag);
 
         // Track break opportunity. A text fragment carries UAX #14's answer
         // (`crate::i18n::segment` computed it over the whole paragraph text,
@@ -322,14 +301,74 @@ pub fn fit_lines_with_first(
             start: line_start,
             end: fragments.len(),
             width: line_width,
-            height: line_height,
-            text_height: line_text_height,
-            ascent: line_ascent,
+            height: metrics.height(),
+            text_height: metrics.text_height(),
+            ascent: metrics.above,
             has_break: false,
         });
     }
 
     lines
+}
+
+/// What a line's fragments put above and below its baseline.
+///
+/// A line's box is the most anything on it reaches above the baseline plus the
+/// most anything reaches below. Where one run reaches farthest both ways that
+/// is its own line, which is every mixed line Word has been measured on here (a
+/// 22pt run beside an 11pt one); where two runs split the reach it is taller
+/// than either, as a line box is in any layout that aligns on a baseline.
+/// Measured in Word (Word for Mac 16, 2026-10-16) with every height rule:
+///
+/// * A run reaches its font's line gap and ascent above the baseline and its
+///   descent below. The line gap (`hhea` `lineGap`, which Skia reports as
+///   leading) is **above** the text — a 22pt Arial line's first baseline sits
+///   0.72pt lower than its ascent alone puts it, and nothing is added below.
+/// * An inline picture makes the line at least its own height.
+/// * A tab or a break makes it at least the height it carries.
+#[derive(Clone, Copy, Debug, Default)]
+struct LineMetrics {
+    /// The most any fragment reaches above the baseline.
+    above: Pt,
+    /// The most any fragment reaches below it.
+    below: Pt,
+    /// The same two for text alone — the base §17.3.1.33 Auto spacing scales.
+    text_above: Pt,
+    text_below: Pt,
+    /// Fragments that carry only a height (tabs, breaks), counted toward both.
+    other: Pt,
+    /// The tallest inline picture, which counts toward the line's height and
+    /// not its text height.
+    picture: Pt,
+}
+
+impl LineMetrics {
+    fn add(&mut self, frag: &Fragment) {
+        match frag {
+            Fragment::Text { metrics, .. } | Fragment::MathFraction { metrics, .. } => {
+                self.add_text(metrics)
+            }
+            Fragment::Emoji { line_metrics, .. } => self.add_text(line_metrics),
+            Fragment::Image { size, .. } => self.picture = self.picture.max(size.height),
+            f => self.other = self.other.max(f.height()),
+        }
+    }
+
+    fn add_text(&mut self, m: &crate::render::layout::fragment::TextMetrics) {
+        let above = m.leading + m.ascent;
+        self.above = self.above.max(above);
+        self.below = self.below.max(m.descent);
+        self.text_above = self.text_above.max(above);
+        self.text_below = self.text_below.max(m.descent);
+    }
+
+    fn height(&self) -> Pt {
+        (self.above + self.below).max(self.other).max(self.picture)
+    }
+
+    fn text_height(&self) -> Pt {
+        (self.text_above + self.text_below).max(self.other)
+    }
 }
 
 /// Measurements for a range of fragments.
@@ -340,29 +379,20 @@ struct RangeMeasure {
     ascent: Pt,
 }
 
-/// Measure total width, max height, text height, and ascent for a range of fragments.
+/// Measure total width and the [`LineMetrics`] of a range of fragments.
 fn measure_range(fragments: &[Fragment], start: usize, end: usize) -> RangeMeasure {
-    let mut m = RangeMeasure {
-        width: Pt::ZERO,
-        height: Pt::ZERO,
-        text_height: Pt::ZERO,
-        ascent: Pt::ZERO,
-    };
+    let mut width = Pt::ZERO;
+    let mut metrics = LineMetrics::default();
     for frag in &fragments[start..end] {
-        m.width += frag.width();
-        m.height = m.height.max(frag.height());
-        match frag {
-            Fragment::Text { metrics, .. } | Fragment::MathFraction { metrics, .. } => {
-                m.text_height = m.text_height.max(metrics.line_height());
-                m.ascent = m.ascent.max(metrics.ascent);
-            }
-            Fragment::Image { .. } => {}
-            _ => {
-                m.text_height = m.text_height.max(frag.height());
-            }
-        }
+        width += frag.width();
+        metrics.add(frag);
     }
-    m
+    RangeMeasure {
+        width,
+        height: metrics.height(),
+        text_height: metrics.text_height(),
+        ascent: metrics.above,
+    }
 }
 
 #[cfg(test)]
