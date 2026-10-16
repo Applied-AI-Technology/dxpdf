@@ -136,3 +136,31 @@ fn a_centred_table_does_not_move_with_the_mode() {
     let b = x(&pages("none"), "T10a");
     assert!((a - b).abs() < 0.01, "got {a} and {b}");
 }
+
+/// The border that places a table is the one that wins its edge: a first
+/// cell's `w:tcBorders`, before the table's own. T12's 12pt table borders are
+/// set to `nil` on its outer cells and count for nothing; T13 has no table
+/// borders and a 12pt `w:left` on its first cell, which counts in full.
+/// Word: under Word 2013 T12a at 77.28 and T13a at 84.0; in compatibility
+/// mode both at 72.0.
+#[test]
+fn the_border_that_wins_the_edge_places_the_table() {
+    let p = pages("15");
+    assert_at(
+        &p,
+        "T12a",
+        MARGIN + CELL,
+        "the cells' nil removes the border",
+    );
+    assert_at(
+        &p,
+        "T13a",
+        MARGIN + 2.0 * HALF_THICK,
+        "the cell's own border",
+    );
+    for mode in ["14", "none"] {
+        let p = pages(mode);
+        assert_at(&p, "T12a", MARGIN, &format!("mode {mode}"));
+        assert_at(&p, "T13a", MARGIN, &format!("mode {mode}"));
+    }
+}

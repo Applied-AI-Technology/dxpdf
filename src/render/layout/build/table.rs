@@ -666,18 +666,94 @@ pub(super) fn build_table(
         .as_ref()
         .map(|b| convert_table_border_config(b, state));
 
+    let style_overrides = raw_table_style
+        .map(|s| s.table_style_overrides.as_slice())
+        .unwrap_or(&[]);
+
     // Half of each outer vertical border: a collapsed table's own edges straddle
     // their grid lines (`border-outer-box.docx`), so this much of each lies
-    // outside the grid. Read before `mirror_columns`, which is fine for the
-    // width — it wants the sum — and the indent below reads its own after.
+    // outside the grid, and placing the table by its edge or its text has to
+    // count it.
+    //
+    // # The border that stands there, not the one `tblBorders` declares
+    //
+    // A cell's own `w:tcBorders` — or its conditional formatting's — wins the
+    // outer edge over the table's (§17.4.66), and Word places the table by
+    // what wins. Measured on the corpus's DogLicenseReport: its full-width
+    // `ListTable3-Accent3` tables declare 0.5pt outer borders, every first cell
+    // sets `w:left="nil"` and every last cell `w:right="nil"`, and Word puts the
+    // first column's text exactly one cell margin inside the left margin and
+    // the last's one inside the right — no half border on either side, where
+    // `test-files/table-indent-compat-15.docx`, whose cells override nothing,
+    // has it on both. The first row's cells are the ones read: a table is
+    // placed once, and no render on record has rows that disagree.
     let half_border = |side: Option<&crate::render::layout::table::TableBorderLine>| {
         side.map(|l| crate::render::layout::table::borders::drawn_width(l) * 0.5)
             .unwrap_or(Pt::ZERO)
     };
-    let outer_half_borders = border_config
-        .as_ref()
-        .map(|b| half_border(b.left.as_ref()) + half_border(b.right.as_ref()))
-        .unwrap_or(Pt::ZERO);
+    let edge_half = |first: bool, state: &mut BuildState| -> Pt {
+        let table_side = border_config.as_ref().and_then(|b| {
+            if first {
+                b.left.as_ref()
+            } else {
+                b.right.as_ref()
+            }
+        });
+        let Some(row) = t.rows.first() else {
+            return half_border(table_side);
+        };
+        let ci = if first {
+            0
+        } else {
+            row.cells.len().saturating_sub(1)
+        };
+        let Some(cell) = row.cells.get(ci) else {
+            return half_border(table_side);
+        };
+        // A row that starts or stops short of the grid has no cell on that
+        // edge, and the table's own border stands there.
+        let grid_col = row.properties.grid_before as usize
+            + row.cells[..ci]
+                .iter()
+                .map(|c| grid_span(c) as usize)
+                .sum::<usize>();
+        let span = grid_span(cell) as usize;
+        if (first && grid_col != 0) || (!first && grid_col + span != num_cols) {
+            return half_border(table_side);
+        }
+        let cond = resolve_cell_conditional(
+            &CellGridPosition {
+                row_idx: 0,
+                grid_col,
+                grid_span: span,
+                num_rows: t.rows.len(),
+                num_cols,
+                row_band_size,
+                col_band_size,
+            },
+            tbl_look,
+            style_overrides,
+        );
+        let side = |b: &model::TableCellBorders| if first { b.left } else { b.right };
+        let declared = cell
+            .properties
+            .borders
+            .get()
+            .and_then(|b| convert_cell_border_override(&side(b), state))
+            .or_else(|| {
+                cond.cell_properties
+                    .as_ref()
+                    .and_then(|tcp| tcp.borders.get())
+                    .and_then(|b| convert_cell_border_override(&side(b), state))
+            });
+        match declared {
+            Some(CellBorderOverride::Suppress) => Pt::ZERO,
+            Some(CellBorderOverride::Border(line)) => half_border(Some(&line)),
+            None => half_border(table_side),
+        }
+    };
+    let (left_half, right_half) = (edge_half(true, state), edge_half(false, state));
+    let outer_half_borders = left_half + right_half;
 
     // §17.4.50 / §17.4.57: what a table's position is measured *to*, which
     // depends on which Word the document asks for. Measured against
@@ -710,13 +786,9 @@ pub(super) fn build_table(
     // border where that is larger (`measure_table_rows`' charge).
     let (text_inset_left, text_inset_right) = {
         let margins = default_cell_margins.unwrap_or(crate::model::geometry::EdgeInsets::ZERO);
-        let (left, right) = border_config
-            .as_ref()
-            .map(|b| (half_border(b.left.as_ref()), half_border(b.right.as_ref())))
-            .unwrap_or((Pt::ZERO, Pt::ZERO));
         (
-            Pt::from(margins.left).max(left),
-            Pt::from(margins.right).max(right),
+            Pt::from(margins.left).max(left_half),
+            Pt::from(margins.right).max(right_half),
         )
     };
     let target_width = match width {
@@ -818,9 +890,6 @@ pub(super) fn build_table(
         &mut state.warned_row_cell_spacing,
     );
     let col_widths = reserve_cell_spacing(col_widths, cell_spacing);
-    let style_overrides = raw_table_style
-        .map(|s| s.table_style_overrides.as_slice())
-        .unwrap_or(&[]);
     let num_rows = t.rows.len();
 
     // Build rows by iterating cells and recursing into their content.
@@ -1050,34 +1119,20 @@ pub(super) fn build_table(
     // left. Under Word 2013 the same table keeps its frame's outside on the
     // indent instead, and the text moves right by the whole border.
     //
-    // # Only a *table-level* border shifts the table, and that is unmeasured
+    // # Which border
     //
-    // The width read here is `border_config.left`, so a leading border declared
-    // by the first cell (§17.4.39 `w:tcBorders/w:left`) or by a row's §17.4.60
-    // `tblPrEx` override moves nothing: the rasterizer straddles whatever line
-    // wins the outer edge, so that border's outer half lands in the margin with
-    // no shift to answer it, while a table-level border of the same weight is
-    // compensated. `tests/table_bidi_visual.rs` renders both and pins the
-    // straddle in each; what it cannot say is whether Word shifts for them too.
-    //
-    // Not repaired here, because the fix and its refutation cost the same
-    // measurement and only one of them can be guessed at. `border-outer-box.docx`
-    // declares its borders at table level only, so nothing on record separates
-    // "the table shifts by whatever border stands on its leading edge" from "the
-    // table shifts by what `tblBorders` declares". **Word reference render
-    // needed**: that fixture's thick table again, with its `w:left` moved from
-    // `w:tblBorders` to the first cell's `w:tcBorders` — same edge, same weight,
-    // and the first cell's text either stays on the indent or moves 6pt right.
-    let leading_border = border_config
-        .as_ref()
-        .and_then(|b| b.left.as_ref())
-        .map(|l| crate::render::layout::table::borders::drawn_width(l) * 0.5)
-        .unwrap_or(Pt::ZERO);
-    let trailing_border = border_config
-        .as_ref()
-        .and_then(|b| b.right.as_ref())
-        .map(|r| crate::render::layout::table::borders::drawn_width(r) * 0.5)
-        .unwrap_or(Pt::ZERO);
+    // The one that wins the edge: a first cell's `w:tcBorders/w:left`, or its
+    // conditional formatting's, before `tblBorders` — see `edge_half`, where it
+    // is read, for the render that settles it. A row's §17.4.60 `tblPrEx`
+    // override is not consulted.
+    // `left_half` and `right_half` are read in logical order; `mirror_columns`
+    // has since reflected a `bidiVisual` table, whose leading edge is its
+    // right.
+    let (leading_border, trailing_border) = if bidi_visual {
+        (right_half, left_half)
+    } else {
+        (left_half, right_half)
+    };
     // §17.4.57: floating table positioning.
     //
     // Horizontal positioning: `tblpX`, `tblpXSpec` and `horzAnchor` reach

@@ -16,6 +16,9 @@ the margin:
         (``T7n``/``T7m``) and a nested 100% table (``T7p``/``T7q``)
   T10 — T2 with ``jc="center"`` (the control)
   T11 — T2 with ``tblInd`` -720
+  T12 — T5, its first cell's ``w:left`` and last cell's ``w:right`` set to
+        ``nil`` in ``w:tcBorders``
+  T13 — T2 with no table borders and a 12pt ``w:left`` on its first cell
   F1  — floating, ``horzAnchor="margin"`` ``tblpX`` 1440 (its own page)
   F2  — floating, no ``tblpX`` (its own page)
 
@@ -156,6 +159,28 @@ def body() -> str:
         table([nested], '<w:tblW w:w="7200" w:type="dxa"/>', grid=(7200,)), para(),
         table(pair("10"), DXA, '<w:jc w:val="center"/>'), para(),
         table(pair("11"), DXA, '<w:tblInd w:w="-720" w:type="dxa"/>'), para(),
+        table(
+            [
+                '<w:tcPr><w:tcBorders><w:left w:val="nil"/></w:tcBorders></w:tcPr>' + para("T12a"),
+                '<w:tcPr><w:tcBorders><w:right w:val="nil"/></w:tcBorders></w:tcPr>' + para("T12z", RIGHT),
+            ],
+            PCT,
+            outer=96,
+            grid=full,
+        ),
+        para(),
+        table(
+            [
+                '<w:tcPr><w:tcBorders>' + border("left", 96) + '</w:tcBorders></w:tcPr>' + para("T13a"),
+                para("T13z", RIGHT),
+            ],
+            DXA,
+        ).replace(
+            border("top", 4) + border("left", 4) + border("bottom", 4) + border("right", 4)
+            + border("insideH", 4) + border("insideV", 4),
+            "",
+        ),
+        para(),
         PAGE_BREAK, para("F1 before"),
         table([para("F1a"), para("F1z", RIGHT)], DXA,
               '<w:tblpPr w:horzAnchor="margin" w:tblpX="1440" w:vertAnchor="text" w:tblpY="0"/>'),
