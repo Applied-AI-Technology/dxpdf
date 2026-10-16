@@ -2228,11 +2228,13 @@ mod tests {
         // Down the middle of the cell: the two horizontals, each two 3pt rules a
         // 3pt gap apart — `drawn_width`, so a `w:sz` of 3pt occupies 9. These
         // are the table's own boundaries, and a *horizontal* one stays inside
-        // the box (`place_y`), keeping its outer face: 0..9 at the top and
-        // 11..20 at the foot of a 20pt row.
+        // the box (`place_y`), keeping its outer face. An exact row holds its
+        // top border inside the declared 20pt and puts its bottom one below it
+        // (`RowHeightRule::content_height`), so the box is 29pt: 0..9 at the
+        // top and 20..29 at the foot.
         assert_eq!(
             down(50.0),
-            vec![(0.0, 3.0), (6.0, 9.0), (11.0, 14.0), (17.0, 20.0)],
+            vec![(0.0, 3.0), (6.0, 9.0), (20.0, 23.0), (26.0, 29.0)],
             "a horizontal double splits along its short axis — stacked, not side by side"
         );
         // Across the middle of the row: the two verticals, split the other way
@@ -2308,12 +2310,18 @@ mod tests {
             // face; a ray across it crosses the two verticals, which straddle
             // their grid lines (`place_x`) and so grow outward about their own
             // centres.
+            //
+            // The foot is read off the double's own render: an exact row's
+            // bottom border stands below its declared height, so the double's
+            // box is deeper than the control's by the difference in band width
+            // and the two do not share a far face.
             let want = if probe {
+                let foot = runs(&dbl).last().map_or(far.1, |r| r.1);
                 vec![
                     (near.0, near.0 + w),
                     (near.0 + 2.0 * w, near.0 + 3.0 * w),
-                    (far.1 - 3.0 * w, far.1 - 2.0 * w),
-                    (far.1 - w, far.1),
+                    (foot - 3.0 * w, foot - 2.0 * w),
+                    (foot - w, foot),
                 ]
             } else {
                 let centre = |r: (f32, f32)| (r.0 + r.1) * 0.5;
@@ -2494,31 +2502,32 @@ mod tests {
             r.iter().all(|(_, _, w, h)| *w > 0.0 && *h > 0.0),
             "no rect may be emitted with a non-positive extent, got {r:?}"
         );
-        // Every rect belongs to one of the two boundary bands, each 3pt tall and
-        // pushed inside the 2pt row from its own end — 0..3 from the top, −1..2
-        // from the foot. Nothing taller, which is what says the verticals were
-        // dropped rather than emitted clamped or inverted.
+        // Every rect belongs to one of the two boundary bands, each 3pt tall:
+        // the top one inside the declared 2pt from its head (0..3) and the
+        // bottom one below it, as an exact row puts it (2..5). Nothing taller,
+        // which is what says the verticals were dropped rather than emitted
+        // clamped or inverted.
         assert!(
             r.iter()
-                .all(|&(_, y, _, h)| h == 3.0 && (y == 0.0 || y == -1.0)),
+                .all(|&(_, y, _, h)| h == 3.0 && (y == 0.0 || y == 2.0)),
             "only the two 3pt boundary bands may be painted, got {r:?}"
         );
         // And both are there at full width. Each spans the cell *and* the half
         // of the 1pt `w:left`/`w:right` that straddles out past either end of
         // it, which the junctions at the band's two ends fill.
-        for (label, y) in [("top", 0.5_f32), ("bottom", 1.5_f32)] {
+        for (label, y) in [("top", 0.5_f32), ("bottom", 4.5_f32)] {
             assert_eq!(
                 ink_along(&result.commands, y, false),
                 vec![(-0.5, 100.5)],
                 "the {label} border spans the cell, junctions included"
             );
         }
-        // The two bands overlap, because 2pt of row cannot hold 3pt of border on
-        // each of its edges. Asserted rather than tolerated — see the doc above.
+        // The two bands overlap, because the declared 2pt cannot hold the 3pt
+        // top border it owns. Asserted rather than tolerated — see the doc above.
         assert_eq!(
             ink_along(&result.commands, 50.0, true),
-            vec![(-1.0, 3.0)],
-            "the two bands cross, so a ray down the cell meets one 4pt run"
+            vec![(0.0, 5.0)],
+            "the two bands cross, so a ray down the cell meets one 5pt run"
         );
     }
 

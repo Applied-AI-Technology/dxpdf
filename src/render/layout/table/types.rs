@@ -18,46 +18,36 @@ pub enum RowHeightRule {
 
 impl RowHeightRule {
     /// §17.4.80 applied: the height of the row's **content box**, given the
-    /// height `content` wants and `border_charge` — half of each of this row's
-    /// two *interior* boundaries, `Pt::ZERO` for a table's own outer edges,
-    /// which hang outside the box instead (`border-outer-box.docx`; the caller
-    /// computes it, since only it knows which boundaries are interior).
+    /// height `content` wants, `above` — the full width of the *interior*
+    /// boundary above this row, `Pt::ZERO` for the first row, whose outer top
+    /// is drawn inside its box and already in `content` — and `insets`.
     ///
-    /// # Measured, and it has been two other ways
+    /// # Measured, and it has been three other ways
     ///
     /// ECMA-376 says only "the height of the current table row" and specifies no
     /// stroke geometry for table borders anywhere, so it cannot say whether a
-    /// row's rules are part of its height. Word can, and a re-measurement of
-    /// `test-files/issue-157-empty-row-edge.docx` on 2026-09-05 (pixel-counted
-    /// off a fresh render, calibrated against the table's own fixed-layout
-    /// width rather than eyeballed) settled it a second time: `atLeast` draws
-    /// the full 40pt table 5 declares, rules outside as before, but `exact`
-    /// draws only **~37pt** for table 4's identical 40pt — short by exactly
-    /// half of each of its two 3pt interior rules. `AtLeast` is a floor on
-    /// *content*, unrelated to the borders around it; `Exact` pins the row's
-    /// total box, which the interior rules eat into from both sides the same
-    /// way a shared vertical eats into a cell's width. Table 3's 2pt row (less
-    /// than the 3pt charged from each side) floors at zero rather than going
-    /// negative, which is consistent with the same rule rather than a separate
-    /// collapse.
+    /// row's rules are part of its height. Word can. `atLeast` draws the full
+    /// height declared and the rules outside it (`issue-157-empty-row-edge.docx`
+    /// table 5). `exact` pins the row's pitch instead, and the boundary *above*
+    /// the row is inside that pitch: `test-files/row-height-margins.docx` steps
+    /// a 6pt `insideH` under three 36pt exact rows and Word puts the second
+    /// row's text 41.5pt below the first's (0.5pt of outer top border, then the
+    /// whole 6pt rule at the head of row two) and the third's 36pt below the
+    /// second's. So the rule a row stands under eats into that row and not the
+    /// one above it; the strip `border_gap_below` reserves is how it does,
+    /// which is why this subtracts `above` from the box and nothing for below.
+    /// Issue-157's table 4 drew ~37pt of cell between its 3pt rules for a 40pt
+    /// row, which this reading and the two before it all fit — it measures the
+    /// gap between the rules, and only the pitch separates them.
     ///
-    /// # Two rival readings, both refuted by a render
-    ///
-    /// The first (shipped briefly) was that `Exact`'s declared height *contains*
-    /// the rules on **both** its interior boundaries in full, by analogy with
-    /// `border-content-charge.docx`'s shared-vertical finding taken literally
-    /// rather than halved. Table 4's 40pt-against-6pt-of-rule refuted it: Word's
-    /// ~37pt is 3pt short of 40, not 6.
-    ///
-    /// The second (recorded here from 2026-08-19 to 2026-09-05, and the reason
-    /// this doc comment is now on its third telling) was that the rules stand
-    /// **wholly** outside the box for `Exact` too, the same as `AtLeast` — drawn
-    /// from a render that, in hindsight, mismeasured table 4 as a clean 40pt.
-    /// What both wrong readings share is that they came from a single
-    /// measurement each; the fixture's own tables 2 and 3 warn about exactly
-    /// this, since a 2pt cell and a hairline are not distinguishable by eye —
-    /// this reading is the first to also fit table 3 without a separate case
-    /// for the floor.
+    /// The readings that died: that `exact` contains the rules on both its
+    /// interior boundaries in full (refuted by issue-157's ~37pt, which would
+    /// have been 34pt); that the rules stand wholly outside it as they do for
+    /// `atLeast` (issue-157 again, mismeasured once as a clean 40pt); and that
+    /// it is short by half of each of the two (this fixture's 41.5pt, which
+    /// would have been 38.5pt). Each came from a single measurement of a
+    /// single shape, which is the warning this comment keeps for whoever is
+    /// next: every one of them fitted the render it was read from.
     ///
     /// # `w:val="0"` is not a height
     ///
@@ -67,16 +57,54 @@ impl RowHeightRule {
     /// it records that Word requires `val="0"` whenever `hRule="auto"`, which is
     /// the same fact from the producing side. A literal reading draws a flat row
     /// and loses the cell entirely, which is what this engine used to do. This
-    /// is decided before `border_charge` ever applies, since an unconstrained
+    /// is decided before `above` ever applies, since an unconstrained
     /// row is not measuring a box at all.
-    pub(super) fn content_height(self, content: Pt, border_charge: Pt) -> Pt {
+    ///
+    /// # The cell margins are outside the height, except the top one under `exact`
+    ///
+    /// Measured against `test-files/row-height-margins.docx`, whose rows all
+    /// declare 36pt and differ only in their §17.4.42/§17.4.43 top and bottom
+    /// cell margins (4.95pt each where present):
+    ///
+    /// | `hRule`   | no margins | top only | bottom only | both     |
+    /// |-----------|------------|----------|-------------|----------|
+    /// | `atLeast` | 36         | 36 + top | 36 + bottom | 36 + both |
+    /// | `exact`   | 36         | 36       | 36 + bottom | 36 + bottom |
+    ///
+    /// So `atLeast` is a floor on the content *between* the margins — a row
+    /// whose content outgrows it adds both margins to the content instead, the
+    /// same as a row with no rule — and `exact` counts its top margin inside
+    /// the declared height and its bottom margin outside it. The second looks
+    /// arbitrary and is what Word draws in every compatibility mode; it is why
+    /// the corpus's permit cards (`hRule="exact"` at 3096 twips, 99-twip cell
+    /// margins) stand 159.75pt apart in Word and not 154.8pt. A table's outer
+    /// bottom border goes with the bottom margin, below the declared height
+    /// (the last exact row of the fixture's tables ends 0.5pt lower in Word
+    /// than its 36pt, by its 0.5pt rule). `insets` carries
+    /// the largest of each across the row's cells, which is the row-level
+    /// question a single height answers; the fixture's cells all agree, so
+    /// which cell's margin wins when they do not is not something it measures.
+    pub(super) fn content_height(self, content: Pt, above: Pt, insets: RowInsets) -> Pt {
         match self {
             // Zero is "unconstrained", not "flat" — see above.
             Self::Exact(h) | Self::AtLeast(h) if h <= Pt::ZERO => content,
-            Self::AtLeast(min) => content.max(min),
-            Self::Exact(h) => (h - border_charge).max(Pt::ZERO),
+            Self::AtLeast(min) => content.max(min + insets.vertical),
+            Self::Exact(h) => (h + insets.bottom - above).max(Pt::ZERO),
         }
     }
+}
+
+/// What a row's cells put around their content, as
+/// [`RowHeightRule::content_height`] needs it: the largest of each across the
+/// cells that size the row.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct RowInsets {
+    /// Top plus bottom: the cell margins (§17.4.42/§17.4.43) and the table's
+    /// own outer borders where they are drawn inside the box.
+    pub(super) vertical: Pt,
+    /// The bottom cell margin and, on the last row, the outer bottom border:
+    /// what `exact` adds below its height.
+    pub(super) bottom: Pt,
 }
 
 /// A table row for layout.

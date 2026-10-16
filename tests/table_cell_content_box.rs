@@ -7,10 +7,12 @@
 //! `w:tcBorders`/`w:tblBorders` give each edge a `w:sz` in eighths of a point,
 //! but nothing says which wins when the border is thicker than the margin. This
 //! engine draws a border *inside* the cell box (`table::borders::emit_cell_borders`)
-//! and so must start the content after it: the inset is `max(border, margin)` on
-//! each of the four sides, which is what `(border − margin).max(0)` computes at
-//! `table::emit`. That choice is what the tests below pin — and, more to the
-//! point, that the *measurement* uses the same rule as the *placement*.
+//! and so must start the content after it. Horizontally the inset is
+//! `max(border, margin)`; vertically the border sits outside the margin and the
+//! two add — Word puts a line under a 0.5pt top border and a 4.95pt top margin
+//! 5.45pt into the row (`test-files/row-height-margins.docx`). That choice is
+//! what the tests below pin — and, more to the point, that the *measurement*
+//! uses the same rule as the *placement*.
 //!
 //! It is the disagreement between those two that the reported defect was. The
 //! horizontal sides charged the border to the content width in
@@ -218,22 +220,24 @@ fn the_content_stays_inside_the_box_when_the_top_border_grows() {
 }
 
 /// The control, and the half that is easy to lose when fixing the other: a top
-/// cell margin at least as thick as the border absorbs it entirely, so the row
-/// does not grow at all.
+/// cell margin does **not** absorb the border above it. §17.4.42's margin is
+/// measured from the inside of the border, so a 6pt margin under a 6pt border
+/// puts the content 12pt down, and the row grows by the border's extra width
+/// exactly as it does with no margin at all.
 ///
-/// §17.4.42's margin is measured from the cell edge, not from the inside of the
-/// border, so a 6pt margin already clears a 6pt border. Without this, a fix that
-/// simply added the border width to the row height would pass every assertion
-/// above.
+/// Measured, not argued: the "a 6pt margin already clears a 6pt border" reading
+/// this test once pinned puts the first line of `row-height-margins.docx`'s
+/// table A2 0.5pt higher than Word does.
 #[test]
-fn a_top_margin_as_thick_as_the_border_absorbs_it() {
+fn a_top_margin_does_not_absorb_the_border_above_it() {
     // 120 twips is 6pt — exactly `THICK`.
     let (_, thin) = row_box(&layout(&one_bordered_edge("top", THIN, 120)));
     let (_, thick) = row_box(&layout(&one_bordered_edge("top", THICK, 120)));
 
     assert_eq!(
-        thick, thin,
-        "max(border, margin) is 6pt either way, so the row height cannot differ"
+        thick - thin,
+        DIFFERENCE,
+        "border and margin add, so the extra {DIFFERENCE}pt of border is extra row"
     );
 }
 
@@ -285,6 +289,11 @@ fn the_content_does_not_move_when_the_bottom_border_grows() {
 /// The row is `hRule="exact"` so its height is fixed by the author rather than
 /// by the content, which is what leaves slack to distribute at all: without it
 /// the row is its own content and every alignment lands in the same place.
+///
+/// An exact row's own outer bottom border stands *below* its declared height
+/// (`test-files/row-height-margins.docx`), so the thicker border grows the box
+/// and the bottom-aligned content stays where the declared height ends — on top
+/// of the border, not under it.
 #[test]
 fn a_bottom_aligned_cell_sits_above_its_bottom_border() {
     let cell = |sz: u32| {
@@ -322,21 +331,28 @@ fn a_bottom_aligned_cell_sits_above_its_bottom_border() {
     let thin_pages = layout(&cell(THIN));
     let thick_pages = layout(&cell(THICK));
 
-    // `hRule="exact"` pins the box, so both rows are the same height and only
-    // the border inside them differs — the content must move by the difference.
+    // `hRule="exact"` pins the height above the border, and the border hangs
+    // below it — so the box grows by the difference and the content does not
+    // move relative to the row's top.
     let (thin_top, thin_h) = row_box(&thin_pages);
     let (thick_top, thick_h) = row_box(&thick_pages);
     assert_eq!(
-        thin_h, thick_h,
-        "an exact row height is the author's, whatever the border"
+        thick_h - thin_h,
+        DIFFERENCE,
+        "an exact row's bottom border is below its declared height"
     );
 
     assert_eq!(
-        (thin_top + thin_h - baseline_of(&thin_pages, "CELL"))
-            - (thick_top + thick_h - baseline_of(&thick_pages, "CELL")),
-        -DIFFERENCE,
-        "the thicker bottom border must lift the bottom-aligned content by its \
-         extra {DIFFERENCE}pt, not leave it under the border"
+        baseline_of(&thick_pages, "CELL") - thick_top,
+        baseline_of(&thin_pages, "CELL") - thin_top,
+        "the bottom-aligned content sits where the declared height ends, above \
+         the border whatever its width"
+    );
+    assert_eq!(
+        (thick_top + thick_h - baseline_of(&thick_pages, "CELL"))
+            - (thin_top + thin_h - baseline_of(&thin_pages, "CELL")),
+        DIFFERENCE,
+        "…which leaves the whole of the thicker border below the content"
     );
 }
 

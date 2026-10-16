@@ -275,7 +275,9 @@ fn emit_one_row(
         let b_bottom = mr.borders[cell_ci].bottom;
 
         let dx = entry.content_dx;
-        let dy_border = (border_width(cell_top) - cell_input.margins.top).max(Pt::ZERO);
+        // Border and margin add vertically — `measure_table_rows` says why and
+        // charged the same amounts.
+        let dy_border = border_width(cell_top);
         // The foot of the content box, mirroring `dy_border` at the head. A
         // bottom border only takes room from the content where it is drawn
         // *inside* the box — `emit_cell_borders` puts it there exactly when no
@@ -286,7 +288,7 @@ fn emit_one_row(
         let dy_bottom = if band_below > Pt::ZERO {
             Pt::ZERO
         } else {
-            (border_width(b_bottom) - cell_input.margins.bottom).max(Pt::ZERO)
+            border_width(b_bottom)
         };
 
         // §17.4.84: for vMerge=Restart cells, vAlign operates over the whole
@@ -1373,17 +1375,19 @@ mod tests {
         );
     }
 
-    /// §17.4.38: a cell's border is drawn inside its box, so a top border wider
-    /// than the cell's own top margin pushes the content down by the
-    /// **difference** — the margin already holds part of the border's width.
-    /// A border no wider than the margin moves nothing.
+    /// §17.4.38: a cell's top border is drawn inside its box and *above* its
+    /// top margin, so it pushes the content down by its **whole** width,
+    /// however wide the margin. Measured in Word against
+    /// `test-files/row-height-margins.docx`: a 0.5pt outer top border over a
+    /// 4.95pt margin puts the first line 5.45pt in, not 4.95pt — the
+    /// "larger of the two" reading this test once asserted.
     ///
     /// Three cells in one row, all with a 2pt top margin: no border, a 1pt
-    /// border (narrower than the margin), and a 5pt one. Only the third moves,
-    /// and by 5 − 2 = 3pt. Asserted as differences against the first, so the
-    /// test does not depend on where a baseline sits inside its line box.
+    /// border (narrower than the margin), and a 5pt one. They move by 1pt and
+    /// 5pt. Asserted as differences against the first, so the test does not
+    /// depend on where a baseline sits inside its line box.
     #[test]
-    fn a_top_border_wider_than_the_cell_margin_pushes_content_down_by_the_difference() {
+    fn a_top_border_pushes_content_down_by_its_whole_width_above_the_margin() {
         use crate::render::layout::table::types::{CellBorderConfig, CellBorderOverride};
 
         let with_top = |width: Option<f32>| TableCellInput {
@@ -1422,13 +1426,14 @@ mod tests {
             vec![0.0, 50.0, 100.0]
         );
         assert_eq!(
-            p[1].1, p[0].1,
-            "a 1pt border fits inside the 2pt margin and moves nothing"
+            p[1].1 - p[0].1,
+            1.0,
+            "a 1pt border sits above the 2pt margin, not within it"
         );
         assert_eq!(
             p[2].1 - p[0].1,
-            3.0,
-            "a 5pt border against a 2pt margin pushes the content down by 3pt"
+            5.0,
+            "a 5pt border pushes the content down by all 5pt"
         );
     }
 

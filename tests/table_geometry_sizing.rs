@@ -359,12 +359,18 @@ fn an_exact_row_height_moves_the_following_block_by_exactly_the_declared_amount(
 }
 
 /// §17.4.80 `hRule="atLeast"` is the same value read as a **floor**, which is
-/// the distinction `exact` exists against. Pinned as two equalities that
-/// bracket it: with content shorter than the minimum an `atLeast` row is
-/// indistinguishable from an `exact` one, and with content taller it is
-/// indistinguishable from a row that declared no height at all.
+/// the distinction `exact` exists against. Pinned as two relations that
+/// bracket it: with content shorter than the minimum an `atLeast` row is an
+/// `exact` one plus the 0.5pt top border it carries above its floor, and with
+/// content taller it is indistinguishable from a row that declared no height
+/// at all.
 ///
-/// Neither equality can hold if the two rules are conflated — the second fails
+/// The 0.5pt is Word's, not a tolerance: an `exact` row holds its top border
+/// inside the declared height and an `atLeast` row stacks it on top
+/// (`test-files/row-height-margins.docx`, tables A1 and R3 — 36.48pt and
+/// 36pt rows for the same 36pt declaration and 0.5pt rules).
+///
+/// Neither relation can hold if the two rules are conflated — the second fails
 /// under `exact` semantics and the first under `auto`.
 #[test]
 fn an_at_least_row_height_is_a_floor_and_an_exact_one_is_not() {
@@ -372,8 +378,9 @@ fn an_at_least_row_height_is_a_floor_and_an_exact_one_is_not() {
     let exact = r#"<w:trHeight w:val="1000" w:hRule="exact"/>"#;
 
     assert!(
-        (after_y(at_least, 1) - after_y(exact, 1)).abs() < 0.01,
-        "under its minimum, atLeast must size exactly like exact: {:.2} vs {:.2}",
+        (after_y(at_least, 1) - after_y(exact, 1) - 0.5).abs() < 0.01,
+        "under its minimum, atLeast must size like exact plus its top border: \
+         {:.2} vs {:.2}",
         after_y(at_least, 1),
         after_y(exact, 1)
     );
