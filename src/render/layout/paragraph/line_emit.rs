@@ -1844,8 +1844,16 @@ pub(super) struct LineBox {
 /// paragraph mark's line — for whichever of its two heights it lacks: an empty
 /// line has neither, a line holding only a picture has no text height.
 ///
-/// The baseline is the line's own ascent ([`FittedLine::ascent`]) below its
-/// top, and whatever the rule adds goes below the text.
+/// Where the baseline goes is the rule's, measured in Word (Word for Mac 16,
+/// 2026-10-16) across Calibri, Arial and Times New Roman at 11 and 22pt:
+///
+/// * `auto` puts it at the line's own ascent ([`FittedLine::ascent`]) and
+///   whatever a multiple adds **below** the text.
+/// * `exact` puts it **80%** of the way down the line, whatever the font —
+///   23.92pt into a 30pt line and 6.4pt into an 8pt one, for every face and
+///   size alike — and an inline picture's foot with it.
+/// * `atLeast` puts whatever it adds **above** the text, so a padded line's
+///   baseline is its descent up from the bottom.
 ///
 /// [`FittedLine::ascent`]: crate::render::layout::line::FittedLine::ascent
 pub(super) fn line_box(
@@ -1864,11 +1872,18 @@ pub(super) fn line_box(
     } else {
         default_line_height
     };
-    LineBox {
-        height: resolve_line_height(natural, text_height, rule, auto_fit),
-        baseline: line.ascent,
-    }
+    let height = resolve_line_height(natural, text_height, rule, auto_fit);
+    let baseline = match rule {
+        LineSpacingRule::Auto(_) => line.ascent,
+        LineSpacingRule::Exact(_) => height * EXACT_BASELINE,
+        LineSpacingRule::AtLeast(_) => (height - natural).max(Pt::ZERO) + line.ascent,
+    };
+    LineBox { height, baseline }
 }
+
+/// How far down an `exact` line its baseline sits, as a share of the line —
+/// see [`line_box`].
+const EXACT_BASELINE: f32 = 0.8;
 
 /// §17.3.1.33 line height for one line, then §20.1.2.1.18 `@lnSpcReduction`.
 ///

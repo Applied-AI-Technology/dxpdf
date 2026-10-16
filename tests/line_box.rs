@@ -240,3 +240,59 @@ fn a_break_s_run_counts_only_on_a_line_of_its_own() {
         "the line the break leaves is the mark's",
     );
 }
+
+/// `exact` puts the baseline 80% of the way down the line whatever the face,
+/// and an inline picture's foot with it. Word: every face and size at exact
+/// 30pt 26.88 below the reference (2.95 + 24), at exact 8pt 9.36 (2.95 +
+/// 6.4); a 40pt picture at exact 20pt with its foot 16pt into the line.
+#[test]
+fn an_exact_line_s_baseline_is_80_percent_down() {
+    let p = pages("line-box.docx");
+    for (r, case) in [("R25", "CA11x30"), ("R28", "AR22x30"), ("R29", "TR11x30")] {
+        assert_gap(&p, r, &format!("{case}a"), REF.1 + 24.0, "0.8 of 30pt");
+        assert_gap(
+            &p,
+            &format!("{case}a"),
+            &format!("{case}b"),
+            30.0,
+            "the line",
+        );
+    }
+    assert_gap(&p, "R32", "CA22x8a", REF.1 + 6.4, "0.8 of 8pt");
+    let q = pages("line-box-inline.docx");
+    let top = at(&q, "R05").1 + REF.1;
+    let foot = pictures(&q)[4].2;
+    assert!(
+        (foot - (top + 16.0)).abs() < 0.01,
+        "I5's picture foot: {}",
+        foot - top
+    );
+}
+
+/// `atLeast` puts what it adds above the text, so a padded line's baseline is
+/// its descent up from the bottom. Word: 11pt Calibri at least 30pt 30.00
+/// below the reference and the next 13.44 below it; a 40pt picture at least
+/// 60pt with its foot on the line's.
+#[test]
+fn an_at_least_line_pads_above_its_text() {
+    let p = pages("line-box.docx");
+    let (_, below) = no_gap(11.0);
+    assert_gap(
+        &p,
+        "R37",
+        "CA11l30a",
+        REF.1 + (30.0 - below),
+        "padded above",
+    );
+    assert_gap(&p, "CA11l30b", "R38", below + REF.0, "nothing below");
+    let (_, below22) = line_gap(22.0);
+    assert_gap(&p, "R40", "AR22l30a", REF.1 + 30.0 - below22, "Arial too");
+    let q = pages("line-box-inline.docx");
+    let top = at(&q, "R06").1 + REF.1;
+    let foot = pictures(&q)[5].2;
+    assert!(
+        (foot - (top + 60.0)).abs() < 0.01,
+        "I6's picture foot: {}",
+        foot - top
+    );
+}
