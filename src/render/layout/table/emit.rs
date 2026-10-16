@@ -166,7 +166,15 @@ fn emit_one_row(
     let collapsed = mr.leading_gap <= Pt::ZERO;
     let leading = mr.leading_gap;
     let row_top = cursor.y + leading;
-    let row_height = mr.height - leading;
+    // The slice's first row is laid out as a table's first row — see
+    // `MeasuredRow::head_extra`, zero for row 0 and for split halves, which is
+    // what makes "first in its slice" the same test as "heads a continuation".
+    let head_extra = if cursor.placed.is_empty() {
+        mr.head_extra
+    } else {
+        Pt::ZERO
+    };
+    let row_height = mr.height - leading + head_extra;
     // §17.4.38: the band under this row, if one was reserved. Not a positional
     // fact — see `has_reserved_bottom_gap`.
     let band_below = if has_reserved_bottom_gap {
@@ -230,7 +238,8 @@ fn emit_one_row(
             continue;
         }
         if let Some(shading) = &cell_input.shading {
-            let effective_h = effective_cell_height(row_ctx, entry, cell_input, row_height);
+            let effective_h =
+                effective_cell_height(row_ctx, entry, cell_input, row_height, head_extra);
             crate::render::layout::shading::emit_shading_background(
                 bufs.commands,
                 PtRect::from_xywh(entry.cell_x, row_top, entry.cell_w, effective_h),
@@ -243,7 +252,8 @@ fn emit_one_row(
             continue;
         }
         if let Some(shading) = &cell_input.shading {
-            let effective_h = effective_cell_height(row_ctx, entry, cell_input, row_height);
+            let effective_h =
+                effective_cell_height(row_ctx, entry, cell_input, row_height, head_extra);
             crate::render::layout::shading::emit_shading_stripes(
                 bufs.commands,
                 PtRect::from_xywh(entry.cell_x, row_top, entry.cell_w, effective_h),
@@ -256,7 +266,7 @@ fn emit_one_row(
         // §17.4.84: the merged span, used below for vAlign — the same height
         // the shading pass above computed, so a shaded merged cell is
         // coloured across the whole span its content is aligned within.
-        let effective_h = effective_cell_height(row_ctx, entry, cell_input, row_height);
+        let effective_h = effective_cell_height(row_ctx, entry, cell_input, row_height, head_extra);
 
         // §17.4.38: restore the top border when this row starts a slice and the
         // resolved top was removed by conflict resolution or adjacent-table
@@ -334,7 +344,7 @@ fn emit_one_row(
         }
     }
 
-    cursor.y += mr.height + mr.border_gap_below;
+    cursor.y += mr.height + head_extra + mr.border_gap_below;
 }
 
 /// §17.4.84: the height a cell's own box effectively spans — a
@@ -343,15 +353,21 @@ fn emit_one_row(
 /// both read the same height; they used to disagree (shading took
 /// `row_height`, vAlign took the span), which coloured a shaded merged cell
 /// across its first row only.
+///
+/// `head_extra` is what `row_height` already carries for a row heading its
+/// slice, and the merged span, measured from the table, needs it too.
 fn effective_cell_height(
     row_ctx: Option<RowContext<'_>>,
     entry: &CellLayoutEntry,
     cell_input: &TableCellInput,
     row_height: Pt,
+    head_extra: Pt,
 ) -> Pt {
     if cell_input.vertical_merge == Some(VerticalMergeState::Restart) {
         row_ctx
-            .map(|ctx| merged_span_height(ctx.measured, ctx.rows, ctx.row_idx, entry.grid_col))
+            .map(|ctx| {
+                merged_span_height(ctx.measured, ctx.rows, ctx.row_idx, entry.grid_col) + head_extra
+            })
             .unwrap_or(row_height)
     } else {
         row_height

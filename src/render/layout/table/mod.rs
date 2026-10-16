@@ -348,10 +348,22 @@ pub(crate) fn layout_table_paginated_with_page_heights(
     let mut current_slice: Vec<SliceItem> = Vec::new();
     let mut remaining = available_height;
 
+    // A group that opens a slice is laid out as the table's first row
+    // (`MeasuredRow::head_extra`, zero for row 0), so it is that much taller
+    // there than it is anywhere else.
+    let opening = |slice: &[SliceItem], start: usize| {
+        if slice.is_empty() {
+            measured.rows[start].head_extra
+        } else {
+            Pt::ZERO
+        }
+    };
+
     for group in &groups {
-        if group.height <= remaining {
+        let height_here = group.height + opening(&current_slice, group.start);
+        if height_here <= remaining {
             current_slice.push(SliceItem::Range(group.start..group.end));
-            remaining -= group.height;
+            remaining -= height_here;
             continue;
         }
 
@@ -475,17 +487,18 @@ pub(crate) fn layout_table_paginated_with_page_heights(
                 remaining -= header_height;
             }
         }
-        if group.height > remaining {
+        let height_here = group.height + opening(&current_slice, group.start);
+        if height_here > remaining {
             log::warn!(
                 "[table] row group {}-{} ({:.1}pt) exceeds page height ({:.1}pt available)",
                 group.start,
                 group.end,
-                group.height.raw(),
+                height_here.raw(),
                 remaining.raw(),
             );
         }
         current_slice.push(SliceItem::Range(group.start..group.end));
-        remaining -= group.height;
+        remaining -= height_here;
     }
     slices.push(current_slice);
 

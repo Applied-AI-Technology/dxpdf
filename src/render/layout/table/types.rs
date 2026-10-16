@@ -315,6 +315,25 @@ pub(super) struct MeasuredRow {
     pub(super) borders: Vec<super::borders::CellBorders>,
     /// Total vertical space the row owns, **including** `leading_gap`.
     pub(super) height: Pt,
+    /// What this row adds to `height` when it heads a continuation slice — the
+    /// first row on a page the table has broken onto.
+    ///
+    /// The top edge that resolution gave to the row above comes back there from
+    /// the table's own top border (`emit_one_row`), drawn inside the row's box,
+    /// and the box grows by its width under every height rule. Nothing else
+    /// changes: an `exact` row still gives up the width of the interior
+    /// boundary above it (`RowHeightRule::content_height`), though that
+    /// boundary is on the other page. Measured against
+    /// `test-files/table-split-head.docx` (Word for Mac 16, 2026-10-16), whose
+    /// 36pt `exact` rows carry onto the next page 30.5pt tall under a 6pt
+    /// `insideH` and a 0.5pt top, 41.5pt under a 0.5pt `insideH` and a 6pt top,
+    /// and 35.5pt with no top border at all.
+    ///
+    /// That is also the first row's rule, read as giving up its own top border
+    /// as the boundary above it and drawing the same border back inside, which
+    /// is why row 0 carries zero. So does a split half, which is not
+    /// re-measured as a slice head; no render has settled one.
+    pub(super) head_extra: Pt,
     /// §17.4.45: cell spacing reserved above this row's content, so the gap to
     /// the row above is exactly one `tblCellSpacing`. Zero without spacing,
     /// which is every table that does not set it.

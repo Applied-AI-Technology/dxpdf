@@ -9,7 +9,7 @@ use crate::render::dimension::Pt;
 
 use crate::render::layout::cell::{layout_cell, CellLayout};
 
-use super::borders::{border_width, plan_table_borders, resolve_table_cell_borders};
+use super::borders::{border_width, plan_table_borders, resolve_table_cell_borders, CellEdge};
 use super::grid::{expand_rows_for_vmerge, is_vmerge_continue};
 use super::types::{
     CellLayoutEntry, MeasuredRow, MeasuredTable, RowInsets, TableBorderConfig, TableRowInput,
@@ -105,6 +105,10 @@ pub(super) fn measure_table_rows(
 
     // Pass 2b: lay out each cell.
     let mut row_cell_layouts: Vec<Vec<CellLayoutEntry>> = Vec::new();
+    let mut head_extras: Vec<Pt> = Vec::with_capacity(num_rows);
+    // §17.4.38: the edge a continuation slice restores on its first row — the
+    // `top_border_override` that `layout_table_paginated` hands to emission.
+    let restored_top: CellEdge = borders.and_then(|b| b.top).into();
 
     for (row_idx, row) in rows.iter().enumerate() {
         let mut entries = Vec::new();
@@ -112,6 +116,9 @@ pub(super) fn measure_table_rows(
         // What the row's cells put around their content, for §17.4.80 — see
         // `RowHeightRule::content_height`, which is measured against both.
         let mut insets = RowInsets::default();
+        // What the row's tallest cell gains at the head of a continuation
+        // slice — see `MeasuredRow::head_extra`.
+        let mut head_extra = Pt::ZERO;
         // §17.4.15: gridBefore — first cell offset.
         let mut grid_idx = row.grid_before as usize;
         // §17.4.38: whether the strip below this row will be reserved for its
@@ -242,6 +249,13 @@ pub(super) fn measure_table_rows(
             // Word, not 4.95pt, and the bottom twin adds the same way to the
             // table's height — in every row rule, and in every compatibility mode.
             let extra_top = border_width(b.top);
+            // At the head of a continuation slice an edge that resolution gave
+            // to the row above is restored from the table's own top
+            // (`emit_one_row`) and drawn inside the box, which grows by it.
+            let head_top = match b.top {
+                CellEdge::Absent => border_width(restored_top),
+                own => border_width(own),
+            };
             let extra_bottom = if reserves_band_below {
                 Pt::ZERO
             } else {
@@ -288,6 +302,7 @@ pub(super) fn measure_table_rows(
                 max_height = max_height.max(layout.content_height + vertical);
                 insets.vertical = insets.vertical.max(vertical);
                 insets.bottom = insets.bottom.max(cell.margins.bottom + extra_bottom);
+                head_extra = head_extra.max(head_top - extra_top);
             }
 
             entries.push(CellLayoutEntry {
@@ -321,6 +336,9 @@ pub(super) fn measure_table_rows(
             };
             max_height = rule.content_height(max_height, top_charge, insets);
         }
+        // Row 0 draws the table's top inside its box already, and a §17.4.49
+        // header repeats as itself; neither is ever laid out any other way.
+        head_extras.push(if row_idx == 0 { Pt::ZERO } else { head_extra });
 
         // §17.4.45: the row's box reserves its own leading gap, mirroring the
         // horizontal inset above — `emit_one_row` places content one spacing
@@ -339,9 +357,9 @@ pub(super) fn measure_table_rows(
     let measured_rows: Vec<MeasuredRow> = row_cell_layouts
         .into_iter()
         .zip(resolved_borders)
-        .zip(row_heights.iter())
+        .zip(row_heights.iter().zip(head_extras))
         .enumerate()
-        .map(|(row_idx, ((entries, borders), &height))| {
+        .map(|(row_idx, ((entries, borders), (&height, head_extra)))| {
             // With cell spacing there is no shared edge to reserve room for:
             // every cell draws its own bottom border inside its own box, and
             // the gap between rows is the spacing itself.
@@ -350,6 +368,7 @@ pub(super) fn measure_table_rows(
                 entries,
                 borders,
                 height,
+                head_extra,
                 leading_gap: cell_spacing,
                 border_gap_below,
                 plan_row: row_idx,

@@ -358,6 +358,7 @@ pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
             entries: first_entries,
             borders: first_borders,
             height: first_h,
+            head_extra: Pt::ZERO,
             leading_gap: mr.leading_gap,
             border_gap_below: Pt::ZERO,
             // Both halves are the *same* row of the border grid, which is the
@@ -369,6 +370,10 @@ pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
             entries: second_entries,
             borders: second_borders,
             height: second_h,
+            // A split half's height is cut from the whole row's and is not
+            // re-measured as a slice head; no Word render has settled where
+            // a restored top border goes in one.
+            head_extra: Pt::ZERO,
             leading_gap: mr.leading_gap,
             border_gap_below: mr.border_gap_below,
             plan_row: mr.plan_row,

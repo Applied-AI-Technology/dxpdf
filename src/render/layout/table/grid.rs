@@ -462,6 +462,7 @@ mod tests {
                     entries: Vec::new(),
                     borders: Vec::new(),
                     height: Pt::new(h),
+                    head_extra: Pt::ZERO,
                     leading_gap: Pt::ZERO,
                     border_gap_below: Pt::new(gap),
                     plan_row: i,
