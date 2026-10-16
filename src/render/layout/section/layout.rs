@@ -2614,19 +2614,20 @@ pub(crate) fn layout_section_with_clearance(
                         // follow; continuation slices are registered so
                         // subsequent floating tables can see them during
                         // collision resolution (§17.4.56 `tblOverlap`).
+                        let (wrap_x, wrap_width) = fi.wrap_box(table_x, table_width);
                         log::debug!(
                             "[layout]   register table float ({}): x={:.1} y={:.1}-{:.1} w={:.1} block_idx={block_idx}",
                             if is_anchor { "anchor" } else { "continuation" },
-                            table_x.raw(),
+                            wrap_x.raw(),
                             y_start.raw(),
                             (y_start + slice_height).raw(),
-                            (table_width + fi.right_gap).raw(),
+                            wrap_width.raw(),
                         );
                         state.page_floats.push(float::ActiveFloat {
-                            page_x: table_x,
+                            page_x: wrap_x,
                             page_y_start: y_start,
                             page_y_end: y_start + slice_height,
-                            width: table_width + fi.right_gap,
+                            width: wrap_width,
                             source: float::FloatSource::Table {
                                 owner_block_idx: block_idx,
                             },

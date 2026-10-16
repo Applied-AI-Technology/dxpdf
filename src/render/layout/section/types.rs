@@ -73,8 +73,15 @@ impl WrapMode {
 /// §17.4.58: positioning data for a floating table.
 #[derive(Debug, Clone)]
 pub struct TableFloatInfo {
+    /// §17.4.57 `leftFromText`: the gap between the table's left edge and text.
+    pub left_gap: Pt,
     /// Gap between the table's right edge and surrounding text.
     pub right_gap: Pt,
+    /// How far the table's leading and trailing borders reach outside its
+    /// outer grid lines — half of each, as §17.4.66 straddles them — which
+    /// the wrap box takes in ([`TableFloatInfo::wrap_box`]).
+    pub outer_left_half: Pt,
+    pub outer_right_half: Pt,
     /// Gap between the table's bottom edge and surrounding text.
     pub bottom_gap: Pt,
     /// §17.4.58: horizontal alignment override (tblpXSpec).
@@ -106,6 +113,31 @@ pub struct TableFloatInfo {
     /// `Some(Overlap)` mean overlap is permitted (the §17.4.57
     /// default).
     pub overlap: Option<crate::model::TableOverlap>,
+}
+
+impl TableFloatInfo {
+    /// The least gap Word leaves between a floating table and the text beside
+    /// it, whatever `leftFromText` or `rightFromText` says.
+    pub const MIN_WRAP_GAP: Pt = Pt::new(0.5);
+
+    /// The page-x and width of the box text wraps around, for a table whose
+    /// left grid line is at `table_x` and whose grid is `table_width` wide.
+    ///
+    /// Text clears the table's **outer** edges — its borders' far sides, not
+    /// the grid lines they straddle — by the distance from text on that side,
+    /// and never by less than [`TableFloatInfo::MIN_WRAP_GAP`]. Measured in
+    /// Word (Word for Mac 16, 2026-10-16), `test-files/floating-table-wrap-*.docx`
+    /// and the 0, 0.5, 3 and 12pt borders before it: with 9pt of
+    /// `rightFromText` the text beside a table at the margin starts 9pt past a
+    /// 0.5pt border's outside (297.5pt) and 9pt past a 6pt one's (300.25pt);
+    /// with none, or 0.2pt, it starts 0.5pt past it; with 1pt, 1pt; and text to
+    /// a right-hand table's left ends `leftFromText` short of its outside the
+    /// same way.
+    pub fn wrap_box(&self, table_x: Pt, table_width: Pt) -> (Pt, Pt) {
+        let left = self.outer_left_half + self.left_gap.max(Self::MIN_WRAP_GAP);
+        let right = self.outer_right_half + self.right_gap.max(Self::MIN_WRAP_GAP);
+        (table_x - left, left + table_width + right)
+    }
 }
 
 /// A floating (anchor) image to be positioned absolutely on the page.
@@ -427,6 +459,42 @@ mod tests {
     use crate::model::dimension::Emu;
     use crate::model::geometry::EdgeInsets;
     use crate::model::TextWrap;
+
+    fn float_info(left_gap: f32, right_gap: f32, halves: (f32, f32)) -> TableFloatInfo {
+        TableFloatInfo {
+            left_gap: Pt::new(left_gap),
+            right_gap: Pt::new(right_gap),
+            outer_left_half: Pt::new(halves.0),
+            outer_right_half: Pt::new(halves.1),
+            bottom_gap: Pt::ZERO,
+            x_align: None,
+            horz_anchor: crate::model::TableAnchor::Text,
+            x_offset: Pt::ZERO,
+            position_inset_left: Pt::ZERO,
+            position_inset_right: Pt::ZERO,
+            y_offset: Pt::ZERO,
+            vert_anchor: crate::model::TableAnchor::Text,
+            overlap: None,
+        }
+    }
+
+    /// The wrap box spans the borders' outsides and each side's distance from
+    /// text, no less than half a point: a 216pt grid at 100 under 0.5pt and 6pt
+    /// outer borders, 9pt of `leftFromText` and none on the right.
+    #[test]
+    fn a_floating_table_s_wrap_box_clears_its_borders_and_gaps() {
+        let (x, w) = float_info(9.0, 0.0, (0.25, 3.0)).wrap_box(Pt::new(100.0), Pt::new(216.0));
+        assert_eq!(
+            x.raw(),
+            100.0 - 0.25 - 9.0,
+            "the left border's outside, then 9pt"
+        );
+        assert_eq!(
+            (x + w).raw(),
+            100.0 + 216.0 + 3.0 + 0.5,
+            "the right border's outside, then the floor"
+        );
+    }
 
     fn insets() -> EdgeInsets<Emu> {
         EdgeInsets::new(

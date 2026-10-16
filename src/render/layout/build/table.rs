@@ -1137,11 +1137,14 @@ pub(super) fn build_table(
     //
     // Horizontal positioning: `tblpX`, `tblpXSpec` and `horzAnchor` reach
     // layout, measured against `test-files/floating-table-x.docx`, and
-    // `rightFromText` widens the wrap reservation. `leftFromText` is parsed
-    // and not yet carried, so text to a float's left wraps flush against it.
+    // `leftFromText`/`rightFromText` widen the wrap reservation from the
+    // borders' outsides (`TableFloatInfo::wrap_box`).
     let float_info = positioning.map(|pos| {
         super::super::section::TableFloatInfo {
+            left_gap: pos.left_from_text.map(Pt::from).unwrap_or(Pt::ZERO),
             right_gap: pos.right_from_text.map(Pt::from).unwrap_or(Pt::ZERO),
+            outer_left_half: leading_border,
+            outer_right_half: trailing_border,
             bottom_gap: pos.bottom_from_text.map(Pt::from).unwrap_or(Pt::ZERO),
             x_align: pos.x_align,
             // §17.4.57: absent, the position is from the text column — Word
@@ -2830,11 +2833,11 @@ mod tests {
     /// so a wire crossed between `left`/`right`, `top`/`bottom` or `x`/`y`
     /// shows up as a wrong number rather than as a missing one.
     #[test]
-    fn seven_of_tbl_p_prs_ten_attributes_reach_the_float_info() {
+    fn eight_of_tbl_p_prs_ten_attributes_reach_the_float_info() {
         let props = model::TableProperties {
             width: measure(dxa(4000)),
             positioning: model::Dup::from(Some(model::TablePositioning {
-                left_from_text: Some(Dimension::new(9999)),
+                left_from_text: Some(Dimension::new(300)),
                 right_from_text: Some(Dimension::new(100)),
                 top_from_text: Some(Dimension::new(9999)),
                 bottom_from_text: Some(Dimension::new(200)),
@@ -2857,6 +2860,7 @@ mod tests {
             5.0,
             "rightFromText's 100 twips, not leftFromText",
         );
+        assert_pt(f.left_gap, 15.0, "leftFromText's 300, not rightFromText");
         assert_pt(f.bottom_gap, 10.0, "bottomFromText's 200, not topFromText");
         assert_pt(f.y_offset, 20.0, "tblpY's 400, not tblpX");
         assert_pt(f.x_offset, 30.0, "tblpX's 600, not tblpY");
@@ -2901,6 +2905,7 @@ mod tests {
             .float_info
             .expect("an empty tblpPr still floats the table");
         assert_pt(f.right_gap, 0.0, "no rightFromText is no gap");
+        assert_pt(f.left_gap, 0.0, "no leftFromText is no gap");
         assert_pt(f.bottom_gap, 0.0, "no bottomFromText is no gap");
         assert_pt(f.y_offset, 0.0, "no tblpY is no offset");
         assert_eq!(

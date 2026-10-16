@@ -2218,7 +2218,10 @@ mod tests {
             alignment: None,
             direction: None,
             float_info: Some(super::TableFloatInfo {
+                left_gap: Pt::ZERO,
                 right_gap: Pt::ZERO,
+                outer_left_half: Pt::ZERO,
+                outer_right_half: Pt::ZERO,
                 bottom_gap: Pt::ZERO,
                 x_align: None,
                 horz_anchor: crate::model::TableAnchor::Text,
@@ -3129,7 +3132,10 @@ mod tests {
             alignment: None,
             direction: None,
             float_info: Some(super::TableFloatInfo {
+                left_gap: Pt::ZERO,
                 right_gap: Pt::ZERO,
+                outer_left_half: Pt::ZERO,
+                outer_right_half: Pt::ZERO,
                 bottom_gap: Pt::ZERO,
                 x_align: None,
                 horz_anchor: crate::model::TableAnchor::Text,
@@ -3467,7 +3473,10 @@ mod tests {
             Some(crate::model::Alignment::Center),
             20.0,
             Some(super::TableFloatInfo {
+                left_gap: Pt::ZERO,
                 right_gap: Pt::ZERO,
+                outer_left_half: Pt::ZERO,
+                outer_right_half: Pt::ZERO,
                 bottom_gap: Pt::ZERO,
                 x_align: None,
                 horz_anchor: crate::model::TableAnchor::Text,

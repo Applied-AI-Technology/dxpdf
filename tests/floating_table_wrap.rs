@@ -61,3 +61,30 @@ fn a_text_anchored_table_stands_tblpy_below_the_following_paragraph() {
         }
     }
 }
+
+/// Text beside a table clears its outer edge — the right border's outside,
+/// not the grid line it straddles — by `rightFromText`, and never by less
+/// than half a point. Measured from the first row's text, a cell margin
+/// (5.4pt) in from the grid: Word 219.74 for 9pt beside a 0.5pt border (A1),
+/// 211.24 for 0.2pt (G1), 211.74 for 1pt (G2), 222.49 for 9pt beside 6pt (G3).
+#[test]
+fn wrapped_text_clears_the_table_s_outside_by_its_gap() {
+    for mode in [15, 14] {
+        let p = pages(mode);
+        for (case, half, gap) in [
+            ("A1", 0.25, 9.0),
+            ("G1", 0.25, 0.5),
+            ("G2", 0.25, 1.0),
+            ("G3", 3.0, 9.0),
+        ] {
+            let (_, row, _) = at(&p, &format!("{case}r1"));
+            let (_, post, _) = at(&p, &format!("{case}post"));
+            let want = 216.0 + half - 5.4 + gap;
+            let got = post - row;
+            assert!(
+                (got - want).abs() < 0.01,
+                "{case} mode {mode}: want {want}, got {got}"
+            );
+        }
+    }
+}
