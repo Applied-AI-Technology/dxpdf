@@ -403,10 +403,12 @@ mod tests {
     fn frag(text: &str) -> Fragment {
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: text.into(),
             break_after: crate::render::layout::fragment::fixture_break_after(text),
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),

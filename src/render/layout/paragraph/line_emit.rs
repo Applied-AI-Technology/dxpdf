@@ -816,6 +816,7 @@ pub(super) fn emit_line_commands(
                     baseline_offset,
                     text_offset,
                     shaped,
+                    kerning,
                     ..
                 } => {
                     let extra_after = if stretchable_gap_after(fragments, &order, pos) {
@@ -957,6 +958,7 @@ pub(super) fn emit_line_commands(
                             color: copy_color,
                             text_scale: font.text_scale,
                             shaped: *shaped,
+                            kerning: kerning.clone(),
                             // LibreOffice VCL's `ImplDrawSpecialText` (the
                             // reference this module follows) always draws
                             // the shadow/relief copy as a solid filled
@@ -979,6 +981,7 @@ pub(super) fn emit_line_commands(
                         color: paint_color,
                         text_scale: font.text_scale,
                         shaped: *shaped,
+                        kerning: kerning.clone(),
                         outline: effects.outline,
                     });
 
@@ -1103,6 +1106,7 @@ pub(super) fn emit_line_commands(
                             color: *color,
                             text_scale: row.font.text_scale,
                             shaped: None,
+                            kerning: None,
                             // §17.3.2.23: an equation's rows are not a run, so
                             // no legacy outline effect applies to them.
                             outline: false,
@@ -1791,6 +1795,7 @@ pub(super) fn emit_tab_leader(
     // scaling are run-level effects on *text*, not on a fill pattern, so the
     // measurement font drops them while keeping family/size/style.
     let leader_font = super::super::fragment::FontProps {
+        features: Default::default(),
         effects: Default::default(),
         char_spacing: Pt::ZERO,
         text_scale: 1.0,
@@ -1820,6 +1825,7 @@ pub(super) fn emit_tab_leader(
 
     commands.push(DrawCommand::Text {
         shaped: None,
+        kerning: None,
         position: PtOffset::new(leader_x.max(x_start), baseline_y),
         text: Rc::from(leader_text.as_str()),
         font_family: leader_font.family,
@@ -2096,10 +2102,12 @@ mod tests {
         use std::rc::Rc;
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: text.into(),
             break_after: crate::render::layout::fragment::fixture_break_after(text),
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),

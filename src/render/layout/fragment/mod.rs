@@ -34,7 +34,7 @@ pub use collect::{
 };
 pub use fallback::{apply_font_fallback, FallbackLookup, RegistryFallback};
 pub(crate) use math::fraction_geometry;
-pub use shape::shape_complex_scripts;
+pub use shape::shape_runs;
 pub use split::split_oversized_fragments;
 
 // ── Superscript / subscript rendering constants ───────────────────────────────
@@ -221,7 +221,7 @@ const LIGHT_GRAY: RgbColor = RgbColor {
 };
 
 /// Font properties needed for rendering a text fragment.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FontProps {
     /// §17.3.2.13/.18/.23/.31 (issue #148): the run's resolved legacy text
     /// effects. On `FontProps` for the same reason `underline` is — per-run
@@ -264,6 +264,9 @@ pub struct FontProps {
     pub underline_position: Pt,
     /// Underline thickness from font metrics.
     pub underline_thickness: Pt,
+    /// The typography the run's formatting turns on beyond its face — today
+    /// §17.3.2.19 kerning, applied by `layout::fragment::shape`.
+    pub features: crate::render::shape::TypographicFeatures,
 }
 
 /// Font metrics for a specific font at a specific size.
@@ -303,7 +306,7 @@ pub struct MathRow {
 }
 
 /// §17.3.2.4: run-level border for rendering.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FragmentBorder {
     pub width: Pt,
     pub color: RgbColor,
@@ -427,6 +430,13 @@ pub enum Fragment {
         /// [`needs_shaping`](crate::render::shape::needs_shaping) is the kind
         /// of duplicate rule issue #130 was spent removing.
         shaped: Option<RunDirection>,
+        /// §17.3.2.19: the kerning after each spacing unit of `text` (UAX #29
+        /// grapheme, [`crate::render::spacing`]) — the pair it forms with the
+        /// next unit, in points, already in `width`. `None` for a run that is
+        /// not kerned or whose pairs are all zero. Set by `layout::fragment::
+        /// shape` from the font's `kern` table ([`crate::render::kern`]) and
+        /// carried to the painter rather than looked up again there.
+        kerning: Option<Rc<[f32]>>,
         /// Full width including trailing whitespace (used for positioning).
         width: Pt,
         /// Width excluding trailing whitespace (used for line-break overflow checking).
@@ -790,7 +800,24 @@ pub fn font_props_from_run(
         // Populated by the measurer from Skia font metrics.
         underline_position: Pt::ZERO,
         underline_thickness: Pt::ZERO,
+        features: crate::render::shape::TypographicFeatures {
+            kern: kerns_at(rp.kerning.cloned(), size),
+        },
     }
+}
+
+/// §17.3.2.19 `w:kern`: whether a run of `size` is kerned. The value is the
+/// smallest size that is, in half-points; absent or zero is no kerning at all.
+///
+/// Measured in Word (`test-files/kerning.docx`): `w:val="28"` kerns a 16pt run
+/// and a 14pt one — the threshold is inclusive — and leaves an 11pt run alone,
+/// and `w:val="0"` kerns nothing. Every compatibility mode agrees. The size
+/// compared is the one the run is drawn at.
+fn kerns_at(
+    kern: Option<crate::model::dimension::Dimension<crate::model::dimension::HalfPoints>>,
+    size: Pt,
+) -> bool {
+    kern.is_some_and(|k| k.raw() > 0 && size >= Pt::from(k))
 }
 
 /// Convert a number to lowercase Roman numerals.
@@ -946,6 +973,7 @@ mod tests {
     #[test]
     fn font_props_reaches_into_a_math_fraction() {
         let font = Rc::new(FontProps {
+            features: Default::default(),
             effects: Default::default(),
             family: Rc::from("Cambria Math"),
             size: Pt::new(12.0),

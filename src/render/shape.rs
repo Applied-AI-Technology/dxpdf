@@ -107,6 +107,16 @@ impl From<BidiLevel> for RunDirection {
     }
 }
 
+/// The OpenType-era typography a run's formatting turns on, which Word applies
+/// only when the document says so.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct TypographicFeatures {
+    /// §17.3.2.19 `w:kern`: pair kerning, on when the run's size has reached
+    /// the threshold the element states. Applied from the font's `kern` table,
+    /// not by this module's shaper — see [`crate::render::kern`].
+    pub kern: bool,
+}
+
 // ─── Public ADTs ─────────────────────────────────────────────────────────────
 
 /// One glyph in a [`ShapedRun`], positioned in pixels at the requested

@@ -551,6 +551,7 @@ mod tests {
 
     fn text_frag(s: &str) -> Fragment {
         let font = FontProps {
+            features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,
             family: Rc::from("Test"),
@@ -565,6 +566,7 @@ mod tests {
         };
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: Rc::from(s),
             break_after: crate::render::layout::fragment::fixture_break_after(s),
@@ -610,6 +612,7 @@ mod tests {
         pages[0].commands.push(DrawCommand::Text {
             outline: false,
             shaped: None,
+            kerning: None,
             text: "body".into(),
             position: PtOffset::new(Pt::ZERO, Pt::ZERO),
             font_family: Rc::from("T"),
@@ -658,6 +661,7 @@ mod tests {
         pages[0].commands.push(DrawCommand::Text {
             outline: false,
             shaped: None,
+            kerning: None,
             text: "body".into(),
             position: PtOffset::new(Pt::ZERO, Pt::ZERO),
             font_family: Rc::from("T"),

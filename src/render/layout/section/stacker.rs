@@ -488,10 +488,12 @@ mod tests {
         use crate::render::layout::fragment::{FontProps, Fragment, TextMetrics};
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: Rc::from("word"),
             break_after: crate::render::layout::fragment::fixture_break_after("word"),
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),

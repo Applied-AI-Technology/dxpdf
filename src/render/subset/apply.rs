@@ -559,6 +559,7 @@ mod tests {
             commands: vec![DrawCommand::Text {
                 outline: false,
                 shaped: None,
+                kerning: None,
                 position: PtOffset::new(Pt::new(72.0), Pt::new(100.0)),
                 text: Rc::from(text),
                 font_family: Rc::from(family),

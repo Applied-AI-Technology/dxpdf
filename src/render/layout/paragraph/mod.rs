@@ -385,6 +385,7 @@ impl PlacedParagraph<'_> {
                         // §17.3.2.23: drop caps do not carry the run effects.
                         outline: false,
                         shaped: None,
+                        kerning: None,
                         position: PtOffset::new(dc_x, baseline_y),
                         text: text.clone(),
                         font_family: font.family.clone(),
@@ -558,10 +559,12 @@ mod tests {
     fn text_frag(text: &str, width: f32) -> Fragment {
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: text.into(),
             break_after: crate::render::layout::fragment::fixture_break_after(text),
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),
@@ -603,6 +606,7 @@ mod tests {
     /// a hyperlinked equation independently of the OMML→fragment path.
     fn math_fraction_frag(hyperlink_url: Option<LinkTarget>) -> Fragment {
         let font = Rc::new(FontProps {
+            features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,
             family: Rc::from("Cambria Math"),
@@ -2420,6 +2424,7 @@ mod tests {
     /// inherits it cannot pass by coincidence.
     fn leader_font(family: &str, size: f32) -> Rc<FontProps> {
         Rc::new(FontProps {
+            features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,
             family: Rc::from(family),

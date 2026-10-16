@@ -281,6 +281,7 @@ fn spacer_fragment(
     let gap = if gap > Pt::ZERO { gap } else { space_width };
     Fragment::Text {
         shaped: None,
+        kerning: None,
         level: BidiLevel::LTR,
         text: Rc::from(""),
         font: Rc::new(font),
@@ -419,6 +420,7 @@ fn inject_text_label(
     let label_width = w;
     let label_frag = Fragment::Text {
         shaped: None,
+        kerning: None,
         level: BidiLevel::LTR,
         text: Rc::from(label_text.as_str()),
         font: Rc::new(label_font.clone()),
@@ -475,6 +477,7 @@ fn inject_text_label(
                 0,
                 Fragment::Text {
                     shaped: None,
+                    kerning: None,
                     level: BidiLevel::LTR,
                     text: Rc::from(" "),
                     font: Rc::new(label_font.clone()),

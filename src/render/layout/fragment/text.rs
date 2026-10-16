@@ -255,6 +255,7 @@ fn push_text_fragment<F>(
     };
     fragments.push(Fragment::Text {
         shaped: None,
+        kerning: None,
         level: BidiLevel::LTR,
         text: Rc::from(text),
         font: Rc::clone(font),
@@ -492,6 +493,7 @@ mod tests {
 
     fn font(family: &str, size: f32) -> FontProps {
         FontProps {
+            features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,
             family: Rc::from(family),

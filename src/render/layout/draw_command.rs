@@ -90,6 +90,10 @@ pub enum DrawCommand {
         /// output of every existing document — exactly as it was. See
         /// [`crate::render::shape::needs_shaping`] for what earns a `Some`.
         shaped: Option<crate::render::shape::RunDirection>,
+        /// §17.3.2.19: the kerning after each spacing unit of `text`, in points
+        /// — the fragment's own (`Fragment::Text::kerning`). The painter draws
+        /// a kerned run unit by unit, as it draws a spaced one.
+        kerning: Option<Rc<[f32]>>,
         /// §17.3.2.23 `w:outline` (issue #148): stroke the glyph contours
         /// instead of filling them —
         /// [`TextEffects::OUTLINE_STROKE_WIDTH`](crate::render::layout::fragment::TextEffects)
@@ -510,6 +514,7 @@ mod tests {
         let mut cmd = DrawCommand::Text {
             outline: false,
             shaped: None,
+            kerning: None,
             position: PtOffset::new(Pt::new(10.0), Pt::new(20.0)),
             text: "hi".into(),
             font_family: Rc::from("Arial"),
@@ -654,6 +659,7 @@ mod tests {
                 DrawCommand::Text {
                     outline: false,
                     shaped: None,
+                    kerning: None,
                     position: at(10.0, 20.0),
                     text: "hi".into(),
                     font_family: Rc::from("Arial"),
@@ -784,6 +790,7 @@ mod tests {
         let cmd = DrawCommand::Text {
             outline: false,
             shaped: None,
+            kerning: None,
             position: PtOffset::new(Pt::new(10.0), Pt::new(20.0)),
             text: Rc::from("x"),
             font_family: Rc::from("Arial"),

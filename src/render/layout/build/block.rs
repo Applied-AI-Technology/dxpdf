@@ -380,6 +380,7 @@ fn build_note_blocks(
                 // §17.8.3.2 / §17.3.2.14: fall back to the document-level spec
                 // defaults rather than restating a font name here.
                 let font = frags[0].font_props().cloned().unwrap_or_else(|| FontProps {
+                    features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,
                     family: std::rc::Rc::from(super::SPEC_FALLBACK_FONT),
@@ -395,6 +396,7 @@ fn build_note_blocks(
                 let ref_size =
                     font.size * crate::render::layout::fragment::SUPERSCRIPT_FONT_SIZE_RATIO;
                 let ref_font = FontProps {
+                    features: Default::default(),
                     size: ref_size,
                     ..font
                 };
@@ -403,6 +405,7 @@ fn build_note_blocks(
                     0,
                     Fragment::Text {
                         shaped: None,
+                        kerning: None,
                         level: BidiLevel::LTR,
                         text: Rc::from(num_text.as_str()),
                         font: Rc::new(ref_font),
@@ -510,7 +513,9 @@ pub(super) fn resolve_paragraph_bidi(
     // Then shaping, which needs the levels the line above resolved: a run's
     // direction is its embedding level, and nothing about the run's own
     // characters says whether it is a Latin phrase quoted inside Arabic.
-    crate::render::layout::fragment::shape_complex_scripts(fragments, ctx.measurer);
+    // §17.3.2.19 kerning is applied by the same pass, and is why it takes the
+    // vector: a kerned token a run boundary split is joined first.
+    crate::render::layout::fragment::shape_runs(fragments, ctx.measurer);
 }
 
 pub(super) fn build_fragments(

@@ -393,6 +393,7 @@ mod tests {
         let row = |text: &str| crate::render::layout::fragment::MathRow {
             text: text.into(),
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),
@@ -431,10 +432,12 @@ mod tests {
     fn frag(text: &str, width: f32, break_after: BreakAfter) -> Fragment {
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: text.into(),
             break_after,
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),
@@ -474,6 +477,7 @@ mod tests {
             leader: crate::model::TabLeader::None,
             line_height: Pt::ZERO,
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),
@@ -698,6 +702,7 @@ mod tests {
             Fragment::Tab {
                 line_height: Pt::new(14.0),
                 font: Rc::new(FontProps {
+                    features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,
                     family: Rc::from("Test"),
@@ -727,10 +732,12 @@ mod tests {
         let frags = vec![
             Fragment::Text {
                 shaped: None,
+                kerning: None,
                 level: crate::i18n::bidi::BidiLevel::LTR,
                 text: "small".into(),
                 break_after: BreakAfter::Prohibited,
                 font: Rc::new(FontProps {
+                    features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,
                     family: Rc::from("Test"),
@@ -760,10 +767,12 @@ mod tests {
             },
             Fragment::Text {
                 shaped: None,
+                kerning: None,
                 level: crate::i18n::bidi::BidiLevel::LTR,
                 text: "big".into(),
                 break_after: BreakAfter::Prohibited,
                 font: Rc::new(FontProps {
+                    features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,
                     family: Rc::from("Test"),

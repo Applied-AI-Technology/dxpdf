@@ -59,6 +59,9 @@ pub struct TextMeasurer<'r> {
     /// words dominate. Uses FxHash: an earlier std-hasher width cache was
     /// net-negative on small docs due to per-word hashing overhead.
     measure_cache: RefCell<FxHashMap<usize, FontMeasureCache>>,
+    /// §17.3.2.19: each typeface's `kern` table, read once per render — `None`
+    /// for a typeface that has none, so it is not asked again.
+    kern_tables: RefCell<HashMap<u32, Option<std::rc::Rc<crate::render::kern::KernTable>>>>,
     /// Issue #139: per-glyph fallback's view of this render's font system.
     ///
     /// Here for the same reason `emoji_resolver` is — it memoizes host lookups
@@ -76,6 +79,7 @@ impl<'r> TextMeasurer<'r> {
             cluster_shaper: Shaper::new().ok(),
             emoji_advance_cache: RefCell::new(HashMap::new()),
             measure_cache: RefCell::new(FxHashMap::default()),
+            kern_tables: RefCell::new(HashMap::new()),
             fallback: RegistryFallback::new(registry),
         }
     }
@@ -194,6 +198,46 @@ impl<'r> TextMeasurer<'r> {
             .ok()?;
         // §17.3.2.45 applies to glyph advances however they were obtained.
         Some(run.total_advance * font_props.text_scale)
+    }
+
+    /// §17.3.2.19: the kerning after each spacing unit of `text` in
+    /// `font_props`' face — the pair its last glyph forms with the next unit's
+    /// first, from the face's `kern` table ([`crate::render::kern`]), in points
+    /// and scaled by §17.3.2.45 like the advances it adjusts. The last unit's
+    /// is zero. `None` when the face has no `kern` table or no pair in `text`
+    /// is kerned.
+    pub fn kerning(&self, text: &str, font_props: &FontProps) -> Option<std::rc::Rc<[f32]>> {
+        let mut font_cache = self.font_cache.borrow_mut();
+        let font = font_cache.get(
+            self.registry,
+            &font_props.family,
+            font_props.size,
+            font_props.bold,
+            font_props.italic,
+        );
+        let typeface = font.typeface();
+        let table = self
+            .kern_tables
+            .borrow_mut()
+            .entry(typeface.unique_id())
+            .or_insert_with(|| crate::render::kern::KernTable::of(&typeface).map(std::rc::Rc::new))
+            .clone()?;
+        let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
+        let units: Vec<&str> = crate::render::spacing::units(text).collect();
+        let size = f32::from(font_props.size);
+        let mut pairs = vec![0.0f32; units.len()];
+        let mut any = false;
+        for (i, w) in units.windows(2).enumerate() {
+            let (Some(left), Some(right)) = (w[0].chars().last(), w[1].chars().next()) else {
+                continue;
+            };
+            let pair = table.pair_at(glyph(left), glyph(right), size) * font_props.text_scale;
+            if pair != 0.0 {
+                pairs[i] = pair;
+                any = true;
+            }
+        }
+        any.then(|| std::rc::Rc::from(pairs))
     }
 
     /// Query font metrics for underline positioning.
@@ -333,6 +377,7 @@ mod tests {
 
     fn fp_at_scale(scale: f32) -> FontProps {
         FontProps {
+            features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,
             family: Rc::from("Helvetica"),

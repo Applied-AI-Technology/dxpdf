@@ -211,6 +211,7 @@ fn split_at_level_boundaries<F>(
     if runs.len() == 1 && !mirrored {
         out.push(Fragment::Text {
             shaped: None,
+            kerning: None,
             level: runs[0].2,
             text,
             font,
@@ -241,6 +242,7 @@ fn split_at_level_boundaries<F>(
         };
         out.push(Fragment::Text {
             shaped: None,
+            kerning: None,
             level,
             text: Rc::from(&*piece),
             font: Rc::clone(&font),
@@ -306,6 +308,7 @@ mod tests {
 
     fn font(rtl: Toggle) -> Rc<FontProps> {
         Rc::new(FontProps {
+            features: Default::default(),
             effects: Default::default(),
             family: Rc::from("Test"),
             size: Pt::new(12.0),
@@ -336,6 +339,7 @@ mod tests {
         let (width, metrics) = measure(text, &font(rtl));
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: BidiLevel::LTR,
             text: Rc::from(text),
             font: font(rtl),

@@ -30,10 +30,10 @@
 //! Nothing. Neither reason can fire for a document with no right-to-left text
 //! in it: `needs_shaping` is false for Latin, Cyrillic, Greek, CJK, Hebrew and
 //! Thai, and every fragment in such a document is at an even level because
-//! `super::bidi` returned without touching it. So this pass walks the vector,
-//! finds nothing, and returns. That is what keeps such a document's pixels
-//! identical — shaping applies GPOS kerning and standard ligatures as well, so
-//! a shaped Latin corpus would reflow everywhere.
+//! `super::bidi` returned without touching it. So the shaping half of this
+//! pass walks the vector, finds nothing, and returns. That is what keeps such a
+//! document's pixels identical — shaping applies GPOS kerning and standard
+//! ligatures as well, so a shaped Latin corpus would reflow everywhere.
 //!
 //! One thing it does not do is §17.3.2.35 `w:spacing`. Inserting space
 //! *between* units of a shaped run means knowing where the shaped cluster
@@ -44,26 +44,46 @@
 //! path shapes. Until it does, a `w:spacing` run in Arabic is measured and
 //! painted without the spacing rather than with it applied at boundaries that
 //! do not survive shaping.
+//!
+//! # Kerning, which is not shaping
+//!
+//! §17.3.2.19 `w:kern` is applied here too, to the runs that are *not* shaped,
+//! because it is the same kind of decision — a property of the finished
+//! fragment that changes its width — and because Word's answer is not the
+//! shaper's: Word kerns from the font's legacy `kern` table, not from GPOS
+//! (`render::kern`). A kerned fragment keeps the cmap path and carries its
+//! pairs (`Fragment::Text::kerning`). Word kerns alongside `w:spacing`, so the
+//! spacing stays as the cmap path applies it (`test-files/kerning.docx`, K6).
+//!
+//! Word kerns the pair a `<w:r>` boundary falls between when both runs kern —
+//! `T` in one run and `owel` in the next measure as `Towel` does (K5) — and
+//! not when the second does not (K5b). So [`shape_runs`] first joins each
+//! token a run boundary split, where the halves are drawn alike and kerned;
+//! the pair is then inside one string.
+
+use std::rc::Rc;
 
 use crate::render::layout::measurer::TextMeasurer;
 use crate::render::shape::{needs_shaping, RunDirection};
 
-use super::Fragment;
+use super::{BreakAfter, Fragment};
 
-/// Mark every fragment that cannot be painted from its string, and re-measure
-/// it against the shaped advance.
+/// Mark every fragment that cannot be painted from its string and re-measure it
+/// against the shaped advance, and kern every kerned one that can.
 ///
 /// Call once per paragraph, immediately after [`super::assign_bidi_levels`] —
 /// the level each fragment carries by then is what decides both *whether* it
 /// is shaped and *which way round*, and a fragment that pass split has each
 /// half measured on its own.
-pub fn shape_complex_scripts(fragments: &mut [Fragment], measurer: &TextMeasurer) {
-    for fragment in fragments {
+pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer) {
+    join_split_kerned_words(fragments);
+    for fragment in fragments.iter_mut() {
         let Fragment::Text {
             text,
             font,
             level,
             shaped,
+            kerning,
             width,
             trimmed_width,
             ..
@@ -74,6 +94,16 @@ pub fn shape_complex_scripts(fragments: &mut [Fragment], measurer: &TextMeasurer
         // Either reason is enough; see this module's doc for why they are two
         // and not one.
         if !level.is_rtl() && !needs_shaping(text) {
+            if font.features.kern {
+                if let Some(pairs) = measurer.kerning(text, font) {
+                    let total: f32 = pairs.iter().sum();
+                    let trimmed_units = crate::render::spacing::unit_count(text.trim_end());
+                    let trimmed: f32 = pairs[..trimmed_units].iter().sum();
+                    *width += crate::render::dimension::Pt::new(total);
+                    *trimmed_width += crate::render::dimension::Pt::new(trimmed);
+                    *kerning = Some(pairs);
+                }
+            }
             continue;
         }
 
@@ -99,6 +129,97 @@ pub fn shape_complex_scripts(fragments: &mut [Fragment], measurer: &TextMeasurer
     }
 }
 
+/// Join each fragment to the next where a `<w:r>` boundary split one token and
+/// the two are kerned and drawn alike — the same font, colour, shading, border,
+/// link, offsets and level — so the pair across the boundary is kerned as Word
+/// kerns it (`kerning.docx`, K5). Only kerned fragments are joined: for any
+/// other, the join would change nothing a cmap walk draws.
+///
+/// Runs before anything is kerned or shaped, so the joined width is the sum of
+/// two cmap widths and `shape_runs` adds the pairs to it.
+fn join_split_kerned_words(fragments: &mut Vec<Fragment>) {
+    let joinable = |a: &Fragment, b: &Fragment| -> bool {
+        match (a, b) {
+            (
+                Fragment::Text {
+                    font: fa,
+                    color: ca,
+                    shading: sa,
+                    border: ba,
+                    break_after: BreakAfter::Prohibited,
+                    level: la,
+                    shaped: None,
+                    kerning: None,
+                    hyperlink_url: ha,
+                    baseline_offset: oa,
+                    text_offset: ta,
+                    is_footnote_ref: false,
+                    ..
+                },
+                Fragment::Text {
+                    font: fb,
+                    color: cb,
+                    shading: sb,
+                    border: bb,
+                    level: lb,
+                    shaped: None,
+                    kerning: None,
+                    hyperlink_url: hb,
+                    baseline_offset: ob,
+                    text_offset: tb,
+                    is_footnote_ref: false,
+                    ..
+                },
+            ) => {
+                fa.features.kern
+                    && (Rc::ptr_eq(fa, fb) || fa == fb)
+                    && ca == cb
+                    && sa == sb
+                    && ba == bb
+                    && la == lb
+                    && ha == hb
+                    && oa == ob
+                    && ta == tb
+            }
+            _ => false,
+        }
+    };
+    if !fragments.windows(2).any(|w| joinable(&w[0], &w[1])) {
+        return;
+    }
+    let mut out: Vec<Fragment> = Vec::with_capacity(fragments.len());
+    for next in fragments.drain(..) {
+        match out.last_mut() {
+            Some(prev) if joinable(prev, &next) => {
+                if let (
+                    Fragment::Text {
+                        text,
+                        break_after,
+                        width,
+                        trimmed_width,
+                        ..
+                    },
+                    Fragment::Text {
+                        text: next_text,
+                        break_after: next_break,
+                        width: next_width,
+                        trimmed_width: next_trimmed,
+                        ..
+                    },
+                ) = (prev, next)
+                {
+                    *text = Rc::from(format!("{text}{next_text}"));
+                    *break_after = next_break;
+                    *trimmed_width = *width + next_trimmed;
+                    *width += next_width;
+                }
+            }
+            _ => out.push(next),
+        }
+    }
+    *fragments = out;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,9 +234,11 @@ mod tests {
     fn frag(text: &str, level: BidiLevel) -> Fragment {
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level,
             text: Rc::from(text),
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 family: Rc::from("Test"),
                 size: Pt::new(12.0),
@@ -158,7 +281,7 @@ mod tests {
         let registry = FontRegistry::new(FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
         let mut frags = vec![frag("Nicht gefunden", BidiLevel::LTR)];
-        shape_complex_scripts(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer);
         assert_eq!(shaped_of(&frags[0]), None);
     }
 
@@ -174,7 +297,7 @@ mod tests {
         let registry = FontRegistry::new(FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
         let mut frags = vec![frag("שלום", BidiLevel::from_number(1))];
-        shape_complex_scripts(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer);
         assert_eq!(shaped_of(&frags[0]), Some(RunDirection::RightToLeft));
     }
 
@@ -185,7 +308,7 @@ mod tests {
         let registry = FontRegistry::new(FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
         let mut frags = vec![frag("שלום", BidiLevel::LTR)];
-        shape_complex_scripts(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer);
         assert_eq!(shaped_of(&frags[0]), None);
     }
 
@@ -199,7 +322,7 @@ mod tests {
             frag("مرحبا", BidiLevel::from_number(1)),
             frag("مرحبا", BidiLevel::from_number(2)),
         ];
-        shape_complex_scripts(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer);
         assert_eq!(shaped_of(&frags[0]), Some(RunDirection::RightToLeft));
         assert_eq!(
             shaped_of(&frags[1]),

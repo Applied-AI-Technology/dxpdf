@@ -317,6 +317,7 @@ fn render_page(
                 color,
                 text_scale,
                 shaped,
+                kerning,
                 outline,
             } => {
                 let (slot, base_font) =
@@ -397,7 +398,7 @@ fn render_page(
                         // engine was wrong before #131, rather than blank.
                         canvas.draw_str(text, to_point(*position), font, &text_paint);
                     }
-                } else if char_spacing.abs() > Pt::ZERO {
+                } else if char_spacing.abs() > Pt::ZERO || kerning.is_some() {
                     // §17.3.2.35 w:spacing / §17.3.1.13 distribute — draw one
                     // spacing unit at a time with explicit spacing between
                     // them, matching the measured fragment width. The unit is
@@ -405,6 +406,10 @@ fn render_page(
                     // measurer counts with, so the width laid out and the width
                     // painted are the same number — see
                     // [`crate::render::spacing`].
+                    //
+                    // §17.3.2.19 kerning takes the same path: each unit then
+                    // also advances by the pair it forms with the next, which
+                    // layout computed and measured (`render::kern`).
                     let unit_count = spacing::unit_count(text);
                     let glyphs = font.text_to_glyphs_vec(&**text);
                     // Batch path: use text_to_glyphs + get_widths when glyph
@@ -434,7 +439,11 @@ fn render_page(
                             font.measure_str(unit, None).0
                         };
                         canvas.draw_str(unit, to_point(cursor), font, &text_paint);
-                        cursor.x += Pt::new(w) + *char_spacing;
+                        let kern = kerning
+                            .as_ref()
+                            .and_then(|k| k.get(i).copied())
+                            .unwrap_or(0.0);
+                        cursor.x += Pt::new(w + kern) + *char_spacing;
                     }
                 } else if let Some(slot) = blob_slot {
                     // Common path: reuse a cached, position-independent glyph
@@ -1095,6 +1104,7 @@ mod tests {
             commands: vec![DrawCommand::Text {
                 outline: false,
                 shaped: None,
+                kerning: None,
                 position: PtOffset::new(Pt::new(72.0), Pt::new(100.0)),
                 text: "Hello world".into(),
                 font_family: Rc::from("Helvetica"),
@@ -1121,6 +1131,7 @@ mod tests {
             commands: vec![DrawCommand::Text {
                 outline: false,
                 shaped: None,
+                kerning: None,
                 position: PtOffset::new(Pt::new(72.0), Pt::new(100.0)),
                 text: "Spaced".into(),
                 font_family: Rc::from("Helvetica"),
@@ -1151,6 +1162,7 @@ mod tests {
             commands: vec![DrawCommand::Text {
                 outline: false,
                 shaped: None,
+                kerning: None,
                 position: PtOffset::new(Pt::new(72.0), Pt::new(100.0)),
                 text: "e\u{301}cole\u{301}".into(),
                 font_family: Rc::from("Helvetica"),
@@ -1221,6 +1233,7 @@ mod tests {
             commands: vec![DrawCommand::Text {
                 outline: false,
                 shaped: None,
+                kerning: None,
                 position: PtOffset::new(Pt::new(72.0), Pt::new(100.0)),
                 text: Rc::from(""),
                 font_family: Rc::from("Helvetica"),
@@ -1346,6 +1359,7 @@ mod tests {
             commands: vec![DrawCommand::Text {
                 outline: false,
                 shaped: None,
+                kerning: None,
                 position: PtOffset::new(Pt::new(72.0), Pt::new(100.0)),
                 text: "Ärzte für Ökologie — 日本語".into(),
                 font_family: Rc::from("Helvetica"),

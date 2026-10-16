@@ -112,6 +112,8 @@ pub fn split_oversized_fragments(
                 // that is already this module's documented last resort — it
                 // now costs a joining script more than it costs Latin.
                 shaped: *shaped,
+                // One unit forms no pair, and the piece is measured unkerned.
+                kerning: None,
                 // UAX #9: a cluster of the parent's text is at the parent's
                 // level. Cutting a word never crosses a level boundary —
                 // `fragment::bidi` has already split at every one of those, so
@@ -157,10 +159,12 @@ mod tests {
     fn text_frag(text: &str, width: f32) -> Fragment {
         Fragment::Text {
             shaped: None,
+            kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: Rc::from(text),
             break_after: super::super::fixture_break_after(text),
             font: Rc::new(FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from("Test"),

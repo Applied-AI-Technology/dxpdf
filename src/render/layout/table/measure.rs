@@ -457,6 +457,7 @@ mod tests {
         use std::rc::Rc;
 
         let font = Rc::new(FontProps {
+            features: Default::default(),
             effects: Default::default(),
             rtl: Toggle::Absent,
             family: Rc::from("Test"),
@@ -474,6 +475,7 @@ mod tests {
                 .iter()
                 .map(|&(text, width)| Fragment::Text {
                     shaped: None,
+                    kerning: None,
                     level: crate::i18n::bidi::BidiLevel::LTR,
                     text: text.into(),
                     break_after: crate::render::layout::fragment::fixture_break_after(text),

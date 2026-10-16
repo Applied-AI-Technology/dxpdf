@@ -335,7 +335,7 @@ fn choose_family(cluster: &str, font: &FontProps, lookup: &impl FallbackLookup) 
 /// changes.
 ///
 /// Call once per paragraph on the **finished** fragment vector, between
-/// [`super::assign_bidi_levels`] and [`super::shape_complex_scripts`]. Both
+/// [`super::assign_bidi_levels`] and [`super::shape_runs`]. Both
 /// edges of that ordering are forced:
 ///
 /// - *after* bidi, because a coverage boundary cannot change an embedding
@@ -445,6 +445,7 @@ fn split_at_coverage_boundaries<F>(
         let piece = &text[start..end];
         let piece_font = match family {
             Some(name) => Rc::new(FontProps {
+                features: Default::default(),
                 family: name,
                 ..(*font).clone()
             }),
@@ -473,9 +474,10 @@ fn split_at_coverage_boundaries<F>(
                 BreakAfter::Prohibited
             },
             level,
-            // Always `None` here: this pass runs before `shape_complex_scripts`,
+            // Always `None` here: this pass runs before `shape_runs`,
             // which is what sets it, precisely so that it sees these pieces.
             shaped: None,
+            kerning: None,
             width: w,
             trimmed_width: tw,
             metrics: m,
@@ -573,6 +575,7 @@ where
         return row;
     };
     let font = Rc::new(FontProps {
+        features: Default::default(),
         family,
         ..(*row.font).clone()
     });
@@ -625,6 +628,7 @@ mod tests {
 
     fn font(family: &str) -> Rc<FontProps> {
         Rc::new(FontProps {
+            features: Default::default(),
             effects: Default::default(),
             family: Rc::from(family),
             size: Pt::new(12.0),
@@ -649,6 +653,7 @@ mod tests {
             break_after: BreakAfter::Opportunity,
             level: BidiLevel::LTR,
             shaped: None,
+            kerning: None,
             width: Pt::new(50.0),
             trimmed_width: Pt::new(50.0),
             metrics: TextMetrics {
@@ -734,6 +739,7 @@ mod tests {
             relief: None,
         };
         let shadowed = Rc::new(FontProps {
+            features: Default::default(),
             effects,
             ..(*font("Base")).clone()
         });

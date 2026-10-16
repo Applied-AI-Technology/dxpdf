@@ -16,6 +16,7 @@ pub mod emoji;
 pub mod error;
 pub mod fonts;
 pub mod geometry;
+pub mod kern;
 pub mod layout;
 pub mod painter;
 pub mod resolve;

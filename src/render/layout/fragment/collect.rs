@@ -403,6 +403,7 @@ fn emit_field_substitution<F>(
         ),
         _ => (
             FontProps {
+                features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
                 family: Rc::from(default_family),
@@ -451,6 +452,7 @@ where
     F: Fn(&str, &FontProps) -> (Pt, TextMetrics),
 {
     let font = FontProps {
+        features: Default::default(),
         effects: Default::default(),
         rtl: crate::render::fonts::Toggle::Absent,
         family: Rc::from(default_family),
@@ -466,6 +468,7 @@ where
     let (w, m) = measure_text(&text, &font);
     Fragment::Text {
         shaped: None,
+        kerning: None,
         level: BidiLevel::LTR,
         text,
         font: Rc::new(font),
@@ -1042,6 +1045,7 @@ where
                 }
                 Inline::Symbol(sym) => {
                     let font = FontProps {
+                        features: Default::default(),
                         effects: Default::default(),
                         rtl: crate::render::fonts::Toggle::Absent,
                         family: Rc::from(sym.font.as_str()),
@@ -1059,6 +1063,7 @@ where
                     let (w, m) = measure_text(&text, &font);
                     fragments.push(Fragment::Text {
                         shaped: None,
+                        kerning: None,
                         level: BidiLevel::LTR,
                         text: Rc::from(text.as_str()),
                         font: Rc::new(font),
@@ -1095,6 +1100,7 @@ where
                     // §17.11.12: footnote reference uses superscript sizing.
                     let ref_size = default_size * super::SUPERSCRIPT_FONT_SIZE_RATIO;
                     let ref_font = FontProps {
+                        features: Default::default(),
                         effects: Default::default(),
                         rtl: crate::render::fonts::Toggle::Absent,
                         family: std::rc::Rc::from(default_family),
@@ -1112,6 +1118,7 @@ where
                     let baseline_offset = -(default_size * super::NOTE_REF_BASELINE_OFFSET_RATIO);
                     fragments.push(Fragment::Text {
                         shaped: None,
+                        kerning: None,
                         level: BidiLevel::LTR,
                         text: Rc::from(num_text.as_str()),
                         font: Rc::new(ref_font),
@@ -1138,6 +1145,7 @@ where
                     let num_text = to_roman_lower(*endnote_counter);
                     let ref_size = default_size * super::SUPERSCRIPT_FONT_SIZE_RATIO;
                     let ref_font = FontProps {
+                        features: Default::default(),
                         effects: Default::default(),
                         rtl: crate::render::fonts::Toggle::Absent,
                         family: std::rc::Rc::from(default_family),
@@ -1154,6 +1162,7 @@ where
                     let baseline_offset = -(default_size * super::NOTE_REF_BASELINE_OFFSET_RATIO);
                     fragments.push(Fragment::Text {
                         shaped: None,
+                        kerning: None,
                         level: BidiLevel::LTR,
                         text: Rc::from(num_text.as_str()),
                         font: Rc::new(ref_font),

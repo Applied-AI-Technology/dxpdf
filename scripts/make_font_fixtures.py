@@ -312,6 +312,13 @@ def main() -> None:
     # Arabic face.
     write(build_joining(), "DxJoining.ttf")
 
+    # ── A kerned font ────────────────────────────────────────────────────
+    #
+    # Pairs in the legacy `kern` table and *different* pairs in `GPOS`, which
+    # is the one property of a real font (Calibri) that decides how Word kerns.
+    # See `build_kerned`.
+    write(build_kerned(), "DxKern.ttf")
+
     print("done — commit the results")
 
 
@@ -395,6 +402,115 @@ def build_joining() -> TTFont:
     )
     fb.setupPost()
     fb.addOpenTypeFeatures(JOINING_FEATURES)
+    fb.font["head"].created = EPOCH
+    fb.font["head"].modified = EPOCH
+    fb.font["head"].macStyle = 0
+    return fb.font
+
+
+# Every printable ASCII character, so a document written for a real font can
+# be laid out in this one without falling back.
+KERN_CHARS = [chr(c) for c in range(0x21, 0x7F)]
+
+# The legacy `kern` table's pairs, in font units of a 1000-unit em. `GPOS`
+# carries the same pairs at other values (`KERN_GPOS_FEATURES`), so a width
+# that matches these was kerned from this table and not from `GPOS`.
+KERN_TABLE_PAIRS = {
+    ("A", "V"): -80,
+    ("V", "A"): -80,
+    ("A", "W"): -60,
+    ("W", "A"): -60,
+    ("A", "Y"): -100,
+    ("T", "o"): -90,
+    ("T", "y"): -70,
+    ("L", "T"): -110,
+    ("y", "o"): -20,
+    ("o", "w"): -10,
+    ("K", "1"): 0,
+}
+
+KERN_GPOS_FEATURES = """
+languagesystem DFLT dflt;
+languagesystem latn dflt;
+
+feature kern {
+    pos A V -200;
+    pos V A -200;
+    pos T o -200;
+    pos K one 40;
+} kern;
+"""
+
+
+def _glyph_name(c: str) -> str:
+    from fontTools.agl import UV2AGL
+
+    return UV2AGL.get(ord(c), f"uni{ord(c):04X}")
+
+
+def build_kerned() -> TTFont:
+    """A font kerned twice over and disagreeing with itself — issue: Word kerns
+    from the `kern` table.
+
+    Calibri carries pair kerning in both its legacy `kern` table and its `GPOS`
+    `kern` feature, at different values, and Word's widths match the table to
+    within 0.01pt where `GPOS` misses by up to 2pt (`test-files/kerning.docx`).
+    This fixture has the same shape in miniature: every advance is 500 units,
+    so a run's width is its length plus exactly the pairs it was kerned by, and
+    the two sources of pairs never agree. `tests/kerning.rs` lays the
+    Word-measured fixture out in it.
+    """
+    names = [".notdef", "space"] + [_glyph_name(c) for c in KERN_CHARS]
+    fb = FontBuilder(UPM, isTTF=True)
+    fb.setupGlyphOrder(names)
+    fb.setupCharacterMap({0x20: "space", **{ord(c): _glyph_name(c) for c in KERN_CHARS}})
+    glyphs = {}
+    for name in names:
+        pen = TTGlyphPen(None)
+        if name not in (".notdef", "space"):
+            pen.moveTo((50, 0))
+            pen.lineTo((50, 700))
+            pen.lineTo((450, 700))
+            pen.lineTo((450, 0))
+            pen.closePath()
+        glyphs[name] = pen.glyph()
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics({name: (500, 50) for name in names})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable(
+        {
+            "familyName": "Dx Kern",
+            "styleName": "Regular",
+            "fullName": "Dx Kern Regular",
+            "psName": "DxKern-Regular",
+            "version": "Version 1.000",
+        }
+    )
+    fb.setupOS2(
+        version=3,
+        sTypoAscender=800,
+        sTypoDescender=-200,
+        usWeightClass=400,
+        usWidthClass=5,
+        fsSelection=0b1000000,
+        achVendID="DXPD",
+    )
+    fb.setupPost()
+    fb.addOpenTypeFeatures(KERN_GPOS_FEATURES)
+    kern = newTable("kern")
+    kern.version = 0
+    from fontTools.ttLib.tables._k_e_r_n import KernTable_format_0
+
+    sub = KernTable_format_0()
+    sub.version = 0
+    sub.format = 0
+    sub.coverage = 1  # horizontal
+    sub.tupleIndex = None
+    sub.kernTable = {
+        (_glyph_name(a), _glyph_name(b)): v for (a, b), v in KERN_TABLE_PAIRS.items() if v
+    }
+    kern.kernTables = [sub]
+    fb.font["kern"] = kern
     fb.font["head"].created = EPOCH
     fb.font["head"].modified = EPOCH
     fb.font["head"].macStyle = 0
