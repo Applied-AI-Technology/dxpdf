@@ -14,6 +14,44 @@ pub struct DocumentSettings {
     pub rsid_root: Option<RevisionSaveId>,
     /// All revision save IDs recorded in this document's history.
     pub rsids: Vec<RevisionSaveId>,
+    /// §17.15.1.21 `w:compat`: the settings that pick which Word's layout the
+    /// document asks for.
+    pub compat: Compatibility,
+}
+
+/// The part of §17.15.1.21 `w:compat` that changes what a page looks like:
+/// the `w:compatSetting` entries Word writes under its own URI
+/// (`http://schemas.microsoft.com/office/word`), [MS-DOCX] §2.6.1.
+///
+/// Both are `Option` because absent is its own answer, not a default value:
+/// a document with no `compatibilityMode` is laid out like an old one, and one
+/// with no `enableOpenTypeFeatures` takes whatever its mode implies.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Compatibility {
+    /// `compatibilityMode`: the Word version whose layout the document asks
+    /// for — 11 (2003), 12 (2007), 14 (2010), 15 (2013 and later).
+    pub mode: Option<u32>,
+    /// `enableOpenTypeFeatures`: OpenType ligatures in a document whose mode
+    /// would not otherwise have them.
+    pub enable_open_type_features: Option<bool>,
+}
+
+impl Compatibility {
+    /// Whether the document asks for Word 2013's layout — `compatibilityMode`
+    /// 15 or later. An absent mode is not: Word opens such a document in
+    /// compatibility mode, and measured against Word's own render its tables
+    /// are placed the way modes 12 and 14 place them, not the way 15 does.
+    pub fn is_word_2013(self) -> bool {
+        self.mode.is_some_and(|m| m >= 15)
+    }
+
+    /// Whether Word applies OpenType ligatures here. Measured: `compatibilityMode`
+    /// 15 does, 14 and 12 do not, and 14 with `enableOpenTypeFeatures` does; an
+    /// explicit setting decides either way.
+    pub fn open_type_features(self) -> bool {
+        self.enable_open_type_features
+            .unwrap_or_else(|| self.is_word_2013())
+    }
 }
 
 impl Default for DocumentSettings {
@@ -27,6 +65,7 @@ impl Default for DocumentSettings {
             even_and_odd_headers: false,
             rsid_root: None,
             rsids: Vec::new(),
+            compat: Compatibility::default(),
         }
     }
 }
@@ -49,5 +88,31 @@ mod tests {
         assert!(!s.even_and_odd_headers);
         assert!(s.rsid_root.is_none());
         assert!(s.rsids.is_empty());
+        assert_eq!(s.compat, Compatibility::default());
+    }
+
+    #[test]
+    fn only_mode_15_and_later_is_word_2013() {
+        let mode = |m| Compatibility {
+            mode: m,
+            enable_open_type_features: None,
+        };
+        assert!(!mode(None).is_word_2013(), "absent is compatibility mode");
+        assert!(!mode(Some(14)).is_word_2013());
+        assert!(mode(Some(15)).is_word_2013());
+        assert!(mode(Some(16)).is_word_2013());
+    }
+
+    #[test]
+    fn open_type_features_follow_the_mode_unless_set() {
+        let c = |m, otf| Compatibility {
+            mode: m,
+            enable_open_type_features: otf,
+        };
+        assert!(c(Some(15), None).open_type_features());
+        assert!(!c(Some(14), None).open_type_features());
+        assert!(!c(None, None).open_type_features());
+        assert!(c(Some(14), Some(true)).open_type_features());
+        assert!(!c(Some(15), Some(false)).open_type_features());
     }
 }

@@ -77,6 +77,9 @@ pub struct ResolvedDocument {
     /// §17.15.1.25: the document's default tab-stop interval (`w:defaultTabStop`,
     /// spec default 720 twips). Consumed by paragraph tab layout.
     pub default_tab_stop: Dimension<Twips>,
+    /// §17.15.1.21: which Word's layout the document asks for. Read where a
+    /// rule differs between them — table placement, OpenType ligatures.
+    pub compat: crate::model::Compatibility,
 }
 
 /// Transform a raw parsed Document into a layout-ready ResolvedDocument.
@@ -151,6 +154,7 @@ pub fn resolve(doc: Document) -> ResolvedDocument {
         embedded_fonts,
         even_and_odd_headers: settings.even_and_odd_headers,
         default_tab_stop: settings.default_tab_stop,
+        compat: settings.compat,
     }
 }
 
