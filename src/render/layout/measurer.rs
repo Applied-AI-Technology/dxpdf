@@ -28,6 +28,20 @@ struct FontMeasureCache {
     widths: FxHashMap<Box<str>, f32>,
 }
 
+/// A run shaped by [`TextMeasurer::shaped`]: its advance, and the `kern`-table
+/// pairs between its glyphs, one per spacing unit, where it was kerned.
+pub struct ShapedMeasure {
+    pub advance: Pt,
+    pub kerning: Option<std::rc::Rc<[f32]>>,
+}
+
+/// Byte offset of each spacing unit of `text` ([`spacing::units`]).
+pub fn unit_starts(text: &str) -> Vec<usize> {
+    spacing::units(text)
+        .map(|u| u.as_ptr() as usize - text.as_ptr() as usize)
+        .collect()
+}
+
 /// Measures text using Skia fonts resolved through a [`FontRegistry`].
 /// Holds a per-instance `FontCache` for `Font` reuse across measurements.
 ///
@@ -157,14 +171,16 @@ impl<'r> TextMeasurer<'r> {
         (scaled_width + spacing_extra, text_metrics)
     }
 
-    /// The advance of `text` **shaped** through HarfBuzz, for a run in a
-    /// script that a cmap lookup renders wrongly.
+    /// `text` **shaped** through HarfBuzz the way `shaping` says — for a run in
+    /// a script that a cmap lookup renders wrongly, or one that takes ligatures
+    /// — as its advance, and, for a kerned ligature run, the `kern`-table pairs
+    /// between the glyphs it shaped to, one per spacing unit (as
+    /// [`TextMeasurer::kerning`] gives them for an unshaped run).
     ///
     /// Separate from [`TextMeasurer::measure`] rather than a branch inside it,
-    /// so that the hot path every Latin document takes keeps exactly the shape
-    /// it had: one memo probe and, on a miss, one `measure_str`. Only
-    /// `layout::fragment::shape` calls this, and only for the fragments
-    /// [`needs_shaping`](crate::render::shape::needs_shaping) picked out.
+    /// so that the hot path every unshaped run takes keeps exactly the shape it
+    /// had: one memo probe and, on a miss, one `measure_str`. Only
+    /// `layout::fragment::shape` calls this, for the fragments it marks.
     ///
     /// Returns `None` when this Skia build exposes no shaper or shaping
     /// produced nothing — the caller then keeps its cmap-measured width, which
@@ -173,31 +189,71 @@ impl<'r> TextMeasurer<'r> {
     ///
     /// §17.3.2.35 `w:spacing` is deliberately *not* added here, and
     /// `layout::fragment::shape` states why at the call site.
-    pub fn shaped_advance(
+    pub fn shaped(
         &self,
         text: &str,
         font_props: &FontProps,
-        direction: crate::render::shape::RunDirection,
-    ) -> Option<Pt> {
+        shaping: crate::render::shape::Shaping,
+    ) -> Option<ShapedMeasure> {
         let shaper = self.cluster_shaper.as_ref()?;
-        let mut font_cache = self.font_cache.borrow_mut();
-        let font = font_cache.get(
-            self.registry,
-            &font_props.family,
-            font_props.size,
-            font_props.bold,
-            font_props.italic,
-        );
+        let typeface = {
+            let mut font_cache = self.font_cache.borrow_mut();
+            font_cache
+                .get(
+                    self.registry,
+                    &font_props.family,
+                    font_props.size,
+                    font_props.bold,
+                    font_props.italic,
+                )
+                .typeface()
+        };
         let run = shaper
-            .shape(
-                &font.typeface(),
-                text,
-                f32::from(font_props.size),
-                direction,
-            )
+            .shape_with(&typeface, text, f32::from(font_props.size), shaping)
             .ok()?;
-        // §17.3.2.45 applies to glyph advances however they were obtained.
-        Some(run.total_advance * font_props.text_scale)
+        let kerning = if shaping.features.kern && !shaping.complex {
+            self.kern_table(&typeface).and_then(|table| {
+                let starts = unit_starts(text);
+                let size = f32::from(font_props.size);
+                let mut pairs = vec![0.0f32; starts.len()];
+                let mut any = false;
+                for w in run.glyphs.windows(2) {
+                    // The pair goes after the unit before the right glyph's
+                    // cluster, so it moves everything from that cluster on.
+                    let unit = starts
+                        .partition_point(|&s| s <= w[1].cluster)
+                        .saturating_sub(1);
+                    let Some(slot) = unit.checked_sub(1) else {
+                        continue;
+                    };
+                    let pair = table.pair_at(w[0].id, w[1].id, size) * font_props.text_scale;
+                    if pair != 0.0 {
+                        pairs[slot] += pair;
+                        any = true;
+                    }
+                }
+                any.then(|| std::rc::Rc::from(pairs))
+            })
+        } else {
+            None
+        };
+        Some(ShapedMeasure {
+            // §17.3.2.45 applies to glyph advances however they were obtained.
+            advance: run.total_advance * font_props.text_scale,
+            kerning,
+        })
+    }
+
+    /// `typeface`'s `kern` table, read once per render.
+    fn kern_table(
+        &self,
+        typeface: &skia_safe::Typeface,
+    ) -> Option<std::rc::Rc<crate::render::kern::KernTable>> {
+        self.kern_tables
+            .borrow_mut()
+            .entry(typeface.unique_id())
+            .or_insert_with(|| crate::render::kern::KernTable::of(typeface).map(std::rc::Rc::new))
+            .clone()
     }
 
     /// §17.3.2.19: the kerning after each spacing unit of `text` in
@@ -216,12 +272,8 @@ impl<'r> TextMeasurer<'r> {
             font_props.italic,
         );
         let typeface = font.typeface();
-        let table = self
-            .kern_tables
-            .borrow_mut()
-            .entry(typeface.unique_id())
-            .or_insert_with(|| crate::render::kern::KernTable::of(&typeface).map(std::rc::Rc::new))
-            .clone()?;
+        drop(font_cache);
+        let table = self.kern_table(&typeface)?;
         let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
         let units: Vec<&str> = crate::render::spacing::units(text).collect();
         let size = f32::from(font_props.size);

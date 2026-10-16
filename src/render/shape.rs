@@ -38,7 +38,7 @@
 //! substituting another family would draw the wrong glyph.
 
 use skia_safe::shaper::run_handler::{Buffer, RunInfo};
-use skia_safe::shaper::{RunHandler, Shaper as SkShaper};
+use skia_safe::shaper::{Feature, RunHandler, Shaper as SkShaper};
 use skia_safe::shapers;
 use skia_safe::{Font, GlyphId, Point, Typeface};
 use thiserror::Error;
@@ -90,7 +90,7 @@ pub fn needs_shaping(text: &str) -> bool {
 /// One run, one direction — UAX #9 reordering has already happened by the time
 /// a run reaches the shaper, and `layout::fragment::bidi` has split every
 /// fragment that spanned a level boundary, so a run is never mixed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum RunDirection {
     #[default]
     LeftToRight,
@@ -115,6 +115,49 @@ pub struct TypographicFeatures {
     /// the threshold the element states. Applied from the font's `kern` table,
     /// not by this module's shaper — see [`crate::render::kern`].
     pub kern: bool,
+    /// [MS-DOCX] `w14:ligatures`: the ligature classes the run asks for. Word
+    /// forms them only where the document's compatibility settings enable
+    /// OpenType features and the run has no character spacing
+    /// (`layout::fragment::shape`); this is what was asked, not what applies.
+    pub ligatures: crate::model::Ligatures,
+}
+
+impl TypographicFeatures {
+    /// The HarfBuzz settings for a run shaped for these features alone: the
+    /// ligature classes asked for on and the rest off, and HarfBuzz's own
+    /// kerning and contextual alternates off — Word kerns from the `kern`
+    /// table on top ([`crate::render::kern`]) and applies `calt` only for
+    /// `w14:cntxtAlts`, which is not read.
+    fn settings(self) -> Vec<Feature> {
+        use crate::model::Ligatures;
+        let setting = |tag: &[u8; 4], on: bool| Feature {
+            tag: u32::from_be_bytes(*tag),
+            value: u32::from(on),
+            start: 0,
+            end: usize::MAX,
+        };
+        vec![
+            setting(b"liga", self.ligatures.contains(Ligatures::STANDARD)),
+            setting(b"clig", self.ligatures.contains(Ligatures::CONTEXTUAL)),
+            setting(b"hlig", self.ligatures.contains(Ligatures::HISTORICAL)),
+            setting(b"dlig", self.ligatures.contains(Ligatures::DISCRETIONAL)),
+            setting(b"calt", false),
+            setting(b"kern", false),
+        ]
+    }
+}
+
+/// How a run reaches the shaper.
+///
+/// `complex` is a run shaped because a cmap walk would draw it wrongly — a
+/// joining script, or a right-to-left level — and is shaped with HarfBuzz's
+/// defaults, as it always was. Otherwise the run is shaped only for the
+/// ligatures in `features`, with exactly those on (`TypographicFeatures::settings`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Shaping {
+    pub direction: RunDirection,
+    pub complex: bool,
+    pub features: TypographicFeatures,
 }
 
 // ─── Public ADTs ─────────────────────────────────────────────────────────────
@@ -136,6 +179,9 @@ pub struct ShapedGlyph {
     /// Vertical offset from the run origin, in pixels, **y-down** per Skia's
     /// convention. Zero for the overwhelming majority of emoji clusters.
     pub y: Pt,
+    /// Byte offset into the shaped text of the first character this glyph
+    /// draws — HarfBuzz's cluster value. A ligature's is its first character's.
+    pub cluster: usize,
 }
 
 /// Output of shaping one run of text.
@@ -208,25 +254,55 @@ impl Shaper {
             &mut collector,
         );
 
-        if collector.glyphs.is_empty() {
-            return Err(ShapeError::NoGlyphs);
+        collector.finish()
+    }
+
+    /// Shape `text` the way `shaping` says: [`Shaper::shape`] itself for a
+    /// `complex` run, and with exactly its features otherwise.
+    pub fn shape_with(
+        &self,
+        typeface: &Typeface,
+        text: &str,
+        size_px: f32,
+        shaping: Shaping,
+    ) -> Result<ShapedRun, ShapeError> {
+        if shaping.complex {
+            return self.shape(typeface, text, size_px, shaping.direction);
         }
-
-        let glyphs = collector
-            .glyphs
-            .iter()
-            .zip(collector.positions.iter())
-            .map(|(&id, p)| ShapedGlyph {
-                id,
-                x: Pt::new(p.x),
-                y: Pt::new(p.y),
-            })
-            .collect();
-
-        Ok(ShapedRun {
-            glyphs,
-            total_advance: Pt::new(collector.advance_x),
-        })
+        // Configured as `fonts::FontCache` configures every font layout
+        // measures with: an unhinted font with subpixel positions and linear
+        // metrics. Without it the shaper rounds each advance to a whole pixel
+        // — a whole point here — and a shaped word measures wider than the
+        // same word unshaped.
+        let mut font = Font::from_typeface(typeface.clone(), size_px);
+        font.set_subpixel(true);
+        font.set_linear_metrics(true);
+        font.set_hinting(skia_safe::FontHinting::None);
+        let mut collector = Collector::default();
+        let len = text.len();
+        let level = match shaping.direction {
+            RunDirection::LeftToRight => 0,
+            RunDirection::RightToLeft => 1,
+        };
+        // The four iterators `shape` builds for itself, minus the font
+        // fallback (see `new`): one font, one direction, the script HarfBuzz
+        // detects, and the process locale's language.
+        let mut fonts = SkShaper::new_trivial_font_run_iterator(&font, len);
+        let mut bidi = shapers::primitive::trivial_bidi_run_iterator(level, len);
+        let mut scripts = shapers::hb::script_run_iterator(text, None);
+        let mut language = SkShaper::new_std_language_run_iterator(text)
+            .unwrap_or_else(|| SkShaper::new_trivial_language_run_iterator("en", len));
+        self.shaper.shape_with_iterators_and_features(
+            text,
+            &mut fonts,
+            &mut bidi,
+            &mut scripts,
+            &mut language,
+            &shaping.features.settings(),
+            f32::MAX,
+            &mut collector,
+        );
+        collector.finish()
     }
 }
 
@@ -237,7 +313,32 @@ impl Shaper {
 struct Collector {
     glyphs: Vec<GlyphId>,
     positions: Vec<Point>,
+    clusters: Vec<u32>,
     advance_x: f32,
+}
+
+impl Collector {
+    fn finish(self) -> Result<ShapedRun, ShapeError> {
+        if self.glyphs.is_empty() {
+            return Err(ShapeError::NoGlyphs);
+        }
+        let glyphs = self
+            .glyphs
+            .iter()
+            .zip(&self.positions)
+            .zip(&self.clusters)
+            .map(|((&id, p), &cluster)| ShapedGlyph {
+                id,
+                x: Pt::new(p.x),
+                y: Pt::new(p.y),
+                cluster: cluster as usize,
+            })
+            .collect();
+        Ok(ShapedRun {
+            glyphs,
+            total_advance: Pt::new(self.advance_x),
+        })
+    }
 }
 
 impl RunHandler for Collector {
@@ -258,12 +359,15 @@ impl RunHandler for Collector {
         self.glyphs.resize(base + info.glyph_count, 0);
         self.positions
             .resize(base + info.glyph_count, Point::new(0.0, 0.0));
+        self.clusters.resize(base + info.glyph_count, 0);
         self.advance_x += info.advance.x;
-        Buffer::new(
-            &mut self.glyphs[base..],
-            &mut self.positions[base..],
-            origin,
-        )
+        Buffer {
+            glyphs: &mut self.glyphs[base..],
+            positions: &mut self.positions[base..],
+            offsets: None,
+            clusters: Some(&mut self.clusters[base..]),
+            point: origin,
+        }
     }
 
     fn commit_run_buffer(&mut self, _info: &RunInfo) {}

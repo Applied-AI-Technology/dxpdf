@@ -311,7 +311,7 @@ fn every_right_to_left_run_is_marked_for_shaping() {
             let is_hebrew = text.chars().any(|c| ('\u{0590}'..='\u{05FF}').contains(&c));
             if is_hebrew {
                 assert_eq!(
-                    *shaped,
+                    shaped.map(|s| s.direction),
                     Some(RunDirection::RightToLeft),
                     "Hebrew run {text:?} must be shaped so its glyphs reverse",
                 );

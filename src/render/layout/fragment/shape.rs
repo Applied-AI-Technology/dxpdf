@@ -25,15 +25,29 @@
 //! L2 reordering (`layout::paragraph::line_emit`) puts a line's *fragments* in
 //! visual order; nothing but the shaper puts the glyphs *inside* one there.
 //!
+//! # And one reason a run is shaped though its string would paint
+//!
+//! 3. **The run takes ligatures.** [MS-DOCX] `w14:ligatures` asks for OpenType
+//!    ligature classes, which only GSUB can form, and Word's own template asks
+//!    for `standardContextual` on every run. Word forms them where the
+//!    document enables OpenType features — compatibility mode 15, or 14 with
+//!    `enableOpenTypeFeatures` — and drops them under character spacing
+//!    (`test-files/ligatures-*.docx`). Such a run is shaped with exactly the
+//!    classes it asks for and HarfBuzz's own kerning and contextual
+//!    alternates off (`TypographicFeatures::settings`), and kerned on top from
+//!    the `kern` table between the glyphs that leaves.
+//!
 //! # What this costs the rest of the corpus
 //!
-//! Nothing. Neither reason can fire for a document with no right-to-left text
-//! in it: `needs_shaping` is false for Latin, Cyrillic, Greek, CJK, Hebrew and
-//! Thai, and every fragment in such a document is at an even level because
-//! `super::bidi` returned without touching it. So the shaping half of this
-//! pass walks the vector, finds nothing, and returns. That is what keeps such a
-//! document's pixels identical — shaping applies GPOS kerning and standard
-//! ligatures as well, so a shaped Latin corpus would reflow everywhere.
+//! Nothing, for a document with no right-to-left text and no ligatures in
+//! force: `needs_shaping` is false for Latin, Cyrillic, Greek, CJK, Hebrew and
+//! Thai, every fragment in such a document is at an even level because
+//! `super::bidi` returned without touching it, and its runs ask for no
+//! ligature the document lets apply. So the shaping half of this pass walks
+//! the vector, finds nothing, and returns, and such a document's pixels are
+//! identical — shaping with HarfBuzz's defaults applies GPOS kerning and
+//! standard ligatures as well, so a shaped Latin corpus would reflow
+//! everywhere.
 //!
 //! One thing it does not do is §17.3.2.35 `w:spacing`. Inserting space
 //! *between* units of a shaped run means knowing where the shaped cluster
@@ -57,26 +71,45 @@
 //!
 //! Word kerns the pair a `<w:r>` boundary falls between when both runs kern —
 //! `T` in one run and `owel` in the next measure as `Towel` does (K5) — and
-//! not when the second does not (K5b). So [`shape_runs`] first joins each
-//! token a run boundary split, where the halves are drawn alike and kerned;
-//! the pair is then inside one string.
+//! not when the second does not (K5b), and forms a ligature across one
+//! between runs that both take it (`of` | `fice`, `ligatures-15.docx` L7). So
+//! [`shape_runs`] first joins each token a run boundary split, where the
+//! halves are drawn alike and kerned or ligated; the pair is then inside one
+//! string.
 
 use std::rc::Rc;
 
 use crate::render::layout::measurer::TextMeasurer;
-use crate::render::shape::{needs_shaping, RunDirection};
+use crate::render::shape::{needs_shaping, RunDirection, Shaping, TypographicFeatures};
 
-use super::{BreakAfter, Fragment};
+use super::{BreakAfter, FontProps, Fragment};
 
-/// Mark every fragment that cannot be painted from its string and re-measure it
-/// against the shaped advance, and kern every kerned one that can.
+/// The ligatures Word forms in a run of `font`: the classes it asks for, where
+/// the document enables OpenType features (`open_type`, from its compatibility
+/// settings — measured: mode 15 and mode 14 with `enableOpenTypeFeatures` do,
+/// modes 14 and 12 alone do not) and the run has no §17.3.2.35 character
+/// spacing, which Word draws the same text unligated under
+/// (`test-files/ligatures.docx`, L5).
+fn ligatures_of(font: &FontProps, open_type: bool) -> crate::model::Ligatures {
+    if open_type && font.char_spacing == crate::render::dimension::Pt::ZERO {
+        font.features.ligatures
+    } else {
+        crate::model::Ligatures::NONE
+    }
+}
+
+/// Mark every fragment that has to go through the shaper and re-measure it
+/// against the shaped advance, and kern every kerned one.
+///
+/// `open_type` is whether the document enables OpenType features at all
+/// (`model::Compatibility::open_type_features`), which decides ligatures.
 ///
 /// Call once per paragraph, immediately after [`super::assign_bidi_levels`] —
 /// the level each fragment carries by then is what decides both *whether* it
 /// is shaped and *which way round*, and a fragment that pass split has each
 /// half measured on its own.
-pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer) {
-    join_split_kerned_words(fragments);
+pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer, open_type: bool) {
+    join_split_words(fragments, open_type);
     for fragment in fragments.iter_mut() {
         let Fragment::Text {
             text,
@@ -91,9 +124,44 @@ pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer) {
         else {
             continue;
         };
-        // Either reason is enough; see this module's doc for why they are two
-        // and not one.
-        if !level.is_rtl() && !needs_shaping(text) {
+        // Reasons 1 and 2; see this module's doc for why they are two and not
+        // one.
+        let complex = level.is_rtl() || needs_shaping(text);
+        if !complex {
+            let ligatures = ligatures_of(font, open_type);
+            if !ligatures.is_empty() {
+                // Reason 3: shaped for its ligatures, then kerned between the
+                // glyphs that leaves, from the `kern` table as ever.
+                let shaping = Shaping {
+                    direction: RunDirection::LeftToRight,
+                    complex: false,
+                    features: TypographicFeatures {
+                        kern: font.features.kern,
+                        ligatures,
+                    },
+                };
+                let measure = |s: &str| {
+                    measurer.shaped(s, font, shaping).map(|m| {
+                        let kern: f32 = m.kerning.as_deref().map_or(0.0, |k| k.iter().sum());
+                        (
+                            m.advance + crate::render::dimension::Pt::new(kern),
+                            m.kerning,
+                        )
+                    })
+                };
+                if let Some((w, pairs)) = measure(text) {
+                    let trimmed = text.trim_end();
+                    *trimmed_width = if trimmed.len() == text.len() {
+                        w
+                    } else {
+                        measure(trimmed).map_or(*trimmed_width, |(t, _)| t)
+                    };
+                    *width = w;
+                    *kerning = pairs;
+                    *shaped = Some(shaping);
+                }
+                continue;
+            }
             if font.features.kern {
                 if let Some(pairs) = measurer.kerning(text, font) {
                     let total: f32 = pairs.iter().sum();
@@ -107,14 +175,18 @@ pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer) {
             continue;
         }
 
-        let direction = RunDirection::from(*level);
-        *shaped = Some(direction);
+        let shaping = Shaping {
+            direction: RunDirection::from(*level),
+            complex: true,
+            features: font.features,
+        };
+        *shaped = Some(shaping);
 
         // A shaping failure leaves the cmap-measured width in place. The run
         // then measures and paints the same way it did before issue #131 —
         // wrong in the way it was already wrong, rather than measured one way
         // and painted another, which is the failure that strands an underline.
-        if let Some(w) = measurer.shaped_advance(text, font, direction) {
+        if let Some(m) = measurer.shaped(text, font, shaping) {
             // Trailing whitespace is not part of a joining sequence, so the
             // trimmed width scales with the same ratio rather than costing a
             // second shaping pass over a string that differs only in spaces.
@@ -123,21 +195,22 @@ pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer) {
             } else {
                 1.0
             };
-            *width = w;
-            *trimmed_width = w * ratio;
+            *width = m.advance;
+            *trimmed_width = m.advance * ratio;
         }
     }
 }
 
 /// Join each fragment to the next where a `<w:r>` boundary split one token and
-/// the two are kerned and drawn alike — the same font, colour, shading, border,
-/// link, offsets and level — so the pair across the boundary is kerned as Word
-/// kerns it (`kerning.docx`, K5). Only kerned fragments are joined: for any
-/// other, the join would change nothing a cmap walk draws.
+/// the two are drawn alike — the same font, colour, shading, border, link,
+/// offsets and level — and kerned or ligated, so the boundary is shaped across
+/// as Word shapes it: the pair across it kerned (`kerning.docx`, K5), a
+/// ligature formed across it (`ligatures.docx`, L7). For any other pair of
+/// fragments the join would change nothing a cmap walk draws, and is not made.
 ///
 /// Runs before anything is kerned or shaped, so the joined width is the sum of
-/// two cmap widths and `shape_runs` adds the pairs to it.
-fn join_split_kerned_words(fragments: &mut Vec<Fragment>) {
+/// two cmap widths and `shape_runs` sets the real one.
+fn join_split_words(fragments: &mut Vec<Fragment>, open_type: bool) {
     let joinable = |a: &Fragment, b: &Fragment| -> bool {
         match (a, b) {
             (
@@ -171,7 +244,7 @@ fn join_split_kerned_words(fragments: &mut Vec<Fragment>) {
                     ..
                 },
             ) => {
-                fa.features.kern
+                (fa.features.kern || !ligatures_of(fa, open_type).is_empty())
                     && (Rc::ptr_eq(fa, fb) || fa == fb)
                     && ca == cb
                     && sa == sb
@@ -271,7 +344,7 @@ mod tests {
 
     fn shaped_of(f: &Fragment) -> Option<RunDirection> {
         match f {
-            Fragment::Text { shaped, .. } => *shaped,
+            Fragment::Text { shaped, .. } => shaped.map(|s| s.direction),
             _ => None,
         }
     }
@@ -281,7 +354,7 @@ mod tests {
         let registry = FontRegistry::new(FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
         let mut frags = vec![frag("Nicht gefunden", BidiLevel::LTR)];
-        shape_runs(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer, false);
         assert_eq!(shaped_of(&frags[0]), None);
     }
 
@@ -297,7 +370,7 @@ mod tests {
         let registry = FontRegistry::new(FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
         let mut frags = vec![frag("שלום", BidiLevel::from_number(1))];
-        shape_runs(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer, false);
         assert_eq!(shaped_of(&frags[0]), Some(RunDirection::RightToLeft));
     }
 
@@ -308,7 +381,7 @@ mod tests {
         let registry = FontRegistry::new(FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
         let mut frags = vec![frag("שלום", BidiLevel::LTR)];
-        shape_runs(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer, false);
         assert_eq!(shaped_of(&frags[0]), None);
     }
 
@@ -322,7 +395,7 @@ mod tests {
             frag("مرحبا", BidiLevel::from_number(1)),
             frag("مرحبا", BidiLevel::from_number(2)),
         ];
-        shape_runs(&mut frags, &measurer);
+        shape_runs(&mut frags, &measurer, false);
         assert_eq!(shaped_of(&frags[0]), Some(RunDirection::RightToLeft));
         assert_eq!(
             shaped_of(&frags[1]),

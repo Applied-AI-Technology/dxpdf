@@ -83,13 +83,14 @@ pub enum DrawCommand {
         /// 1.5 = 150%). Painter applies via `Font::set_scale_x`.
         text_scale: f32,
         /// Shape this run through HarfBuzz instead of mapping its codepoints
-        /// through the cmap, and lay its glyphs out in this direction.
+        /// through the cmap — in this direction, for its script or for its
+        /// ligatures.
         ///
-        /// `None` on every command of a document in a script that does not
-        /// need it, which keeps the painter's `TextBlob` fast path — and the
-        /// output of every existing document — exactly as it was. See
-        /// [`crate::render::shape::needs_shaping`] for what earns a `Some`.
-        shaped: Option<crate::render::shape::RunDirection>,
+        /// `None` on every command whose run needs neither, which keeps the
+        /// painter's `TextBlob` fast path — and the output of every such
+        /// document — exactly as it was. See `layout::fragment::shape` for what
+        /// earns a `Some`.
+        shaped: Option<crate::render::shape::Shaping>,
         /// §17.3.2.19: the kerning after each spacing unit of `text`, in points
         /// — the fragment's own (`Fragment::Text::kerning`). The painter draws
         /// a kerned run unit by unit, as it draws a spaced one.

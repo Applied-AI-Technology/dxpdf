@@ -204,6 +204,11 @@ struct PaintState {
     /// no HarfBuzz shaper, in which case such runs fall back to `draw_str` —
     /// unjoined, which is what every run looked like before #131.
     shaper: Option<crate::render::shape::Shaper>,
+    /// Shaped glyph runs, cached per (font slot, how the run is shaped, text)
+    /// for the reason `blob_cache` is: with ligatures on — as Word's own
+    /// template sets them — every word of a document is shaped, and words
+    /// repeat.
+    shaped_cache: ShapedCache,
     /// Tier-0 features already reported, so an unsupported fill in a header
     /// warns once per render rather than once per page. Per-render, like
     /// `warned_emoji` in `layout::measurer` and `warned_border_styles` in
@@ -219,10 +224,16 @@ impl PaintState {
             emoji_rasterizer: EmojiRasterizer::default(),
             blob_cache: FxHashMap::default(),
             shaper: crate::render::shape::Shaper::new().ok(),
+            shaped_cache: FxHashMap::default(),
             warned: FxHashSet::default(),
         }
     }
 }
+
+type ShapedCache = FxHashMap<
+    (usize, crate::render::shape::Shaping),
+    FxHashMap<Box<str>, crate::render::shape::ShapedRun>,
+>;
 
 /// Draw one run through HarfBuzz, returning whether it drew anything.
 ///
@@ -231,32 +242,73 @@ impl PaintState {
 /// error — the run is then painted the way every run was painted before issue
 /// #131, which for a joining script is unjoined but present.
 ///
+/// The run is shaped against `base` — the cached, unscaled font layout measured
+/// with — and drawn with `font`, which carries any §17.3.2.45 `scale_x`; the
+/// glyph positions are scaled to match, as the measured advance was. Every
+/// glyph then moves right by the `char_spacing` and the §17.3.2.19 `kerning`
+/// of each spacing unit before its cluster — the per-unit offsets layout
+/// measured ([`crate::render::spacing`]).
+///
 /// Positions come back as absolute offsets from the run origin, which is what
 /// [`Canvas::draw_glyphs_at`] takes — the same convention `render::emoji`'s
 /// rasterizer relies on, and the reason neither accumulates a pen.
+#[allow(clippy::too_many_arguments)]
 fn draw_shaped(
     canvas: &skia_safe::Canvas,
     shaper: Option<&crate::render::shape::Shaper>,
+    cache: &mut ShapedCache,
+    (slot, base): (usize, &skia_safe::Font),
     font: &skia_safe::Font,
     text: &str,
-    direction: crate::render::shape::RunDirection,
+    shaping: crate::render::shape::Shaping,
+    char_spacing: Pt,
+    kerning: Option<&[f32]>,
     position: crate::render::geometry::PtOffset,
     paint: &Paint,
 ) -> bool {
     let Some(shaper) = shaper else {
         return false;
     };
-    let Ok(run) = shaper.shape(&font.typeface(), text, font.size(), direction) else {
-        return false;
-    };
+    let runs = cache.entry((slot, shaping)).or_default();
+    if !runs.contains_key(text) {
+        let Ok(run) = shaper.shape_with(&base.typeface(), text, base.size(), shaping) else {
+            return false;
+        };
+        runs.insert(Box::from(text), run);
+    }
+    let run = &runs[text];
     if run.glyphs.is_empty() {
         return false;
     }
+    // Offset of each spacing unit's start: the spacing and pairs of every unit
+    // before it. Left empty, and every glyph unmoved, when there are neither.
+    let unit_offsets: Vec<(usize, f32)> = if char_spacing != Pt::ZERO || kerning.is_some() {
+        let mut acc = 0.0;
+        crate::render::layout::measurer::unit_starts(text)
+            .into_iter()
+            .enumerate()
+            .map(|(i, start)| {
+                let at = acc;
+                acc += f32::from(char_spacing)
+                    + kerning.and_then(|k| k.get(i)).copied().unwrap_or(0.0);
+                (start, at)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let scale = font.scale_x();
     let ids: Vec<skia_safe::GlyphId> = run.glyphs.iter().map(|g| g.id).collect();
     let offsets: Vec<skia_safe::Point> = run
         .glyphs
         .iter()
-        .map(|g| skia_safe::Point::new(f32::from(g.x), f32::from(g.y)))
+        .map(|g| {
+            let unit = unit_offsets
+                .partition_point(|&(start, _)| start <= g.cluster)
+                .checked_sub(1);
+            let shift = unit.map_or(0.0, |u| unit_offsets[u].1);
+            skia_safe::Point::new(f32::from(g.x) * scale + shift, f32::from(g.y))
+        })
         .collect();
     canvas.draw_glyphs_at(&ids, &*offsets, to_point(position), font, paint);
     true
@@ -277,6 +329,7 @@ fn render_page(
         emoji_rasterizer,
         blob_cache,
         shaper,
+        shaped_cache,
         warned,
     } = state;
     let image_dpi = options.image_dpi();
@@ -363,11 +416,13 @@ fn render_page(
                     text_paint.set_style(skia_safe::PaintStyle::Fill);
                 }
 
-                if let Some(direction) = shaped {
-                    // Issue #131: a joining script. `draw_str` and
-                    // `TextBlob::from_str` map codepoints through the cmap
-                    // alone, which for Arabic paints every letter in its
-                    // isolated form — a different word, not a plainer one.
+                if let Some(shaping) = shaped {
+                    // Issue #131: a joining script or a right-to-left level —
+                    // or a run that takes ligatures (`layout::fragment::shape`).
+                    // `draw_str` and `TextBlob::from_str` map codepoints
+                    // through the cmap alone, which for Arabic paints every
+                    // letter in its isolated form — a different word, not a
+                    // plainer one — and for a ligature paints its letters.
                     //
                     // Shaping here rather than carrying glyph ids on the
                     // command is deliberate: `render::subset` rewrites a
@@ -379,17 +434,27 @@ fn render_page(
                     // both come from this same shaper over the same typeface,
                     // and `fontcull` keeps the GSUB closure of every kept
                     // codepoint (see `subset::collect`), so the substitutions
-                    // survive subsetting.
+                    // survive subsetting. The kerning, which the subsetter may
+                    // drop with the legacy table, travels on the command.
                     //
-                    // §17.3.2.35 `w:spacing` is not applied to a shaped run —
-                    // `layout::fragment::shape` says why, and does not add it
-                    // to the measured width either.
+                    // §17.3.2.35 `w:spacing` is not applied to a run shaped for
+                    // its script — `layout::fragment::shape` says why, and does
+                    // not add it to the measured width either.
+                    let spacing = if shaping.complex {
+                        Pt::ZERO
+                    } else {
+                        *char_spacing
+                    };
                     if !draw_shaped(
                         canvas,
                         shaper.as_ref(),
+                        shaped_cache,
+                        (slot, base_font),
                         font,
                         text,
-                        *direction,
+                        *shaping,
+                        spacing,
+                        kerning.as_deref(),
                         *position,
                         &text_paint,
                     ) {

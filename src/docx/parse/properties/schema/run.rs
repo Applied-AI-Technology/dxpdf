@@ -50,7 +50,9 @@ impl<'de> Deserialize<'de> for TextScaleXml {
 }
 
 use crate::docx::model::dimension::{Dimension, HalfPoints, Twips, Unit};
-use crate::docx::model::{RunProperties, StrikeStyle, StyleId, TextScale, UnderlineStyle};
+use crate::docx::model::{
+    Ligatures, RunProperties, StrikeStyle, StyleId, TextScale, UnderlineStyle,
+};
 use crate::docx::parse::primitives::st_enums::{StHighlightColor, StUnderline, StVerticalAlignRun};
 use crate::docx::parse::primitives::units::deserialize_nonnegative_dimension;
 use crate::docx::parse::primitives::{last_toggle, HexColor, OnOff};
@@ -141,6 +143,13 @@ pub(crate) struct RPrXml {
     lang: Vec<LangXml>,
     #[serde(rename = "bdr", default)]
     bdr: Vec<BorderXml>,
+    /// Word-2010 `<w14:ligatures w14:val="…"/>`, claimed by namespace for the
+    /// reason `w14_shadow` is (see the module doc).
+    #[serde(
+        rename = "{http://schemas.microsoft.com/office/word/2010/wordml}ligatures",
+        default
+    )]
+    w14_ligatures: Vec<ValString>,
 }
 
 /// `<w:u w:val="..."/>` — underline. Unlike other ST-enum wrappers we can't
@@ -222,6 +231,7 @@ impl RPrXml {
             lang: Dup::from(self.lang).map(Into::into),
             border: Dup::from(self.bdr).map(Into::into),
             text_scale: Dup::from(self.char_scale).map(|v| TextScale::new(v.val.0)),
+            ligatures: Dup::from(self.w14_ligatures).filter_map(|v| Ligatures::parse(&v.val)),
         };
         (props, style_id)
     }
@@ -576,5 +586,31 @@ mod tests {
         </rPr>"#;
         let (rp, _) = parse(xml);
         assert_eq!(rp.shadow, Some(false));
+    }
+
+    /// `<w14:ligatures w14:val="standardContextual"/>`, which Word's own
+    /// template writes into `w:rPrDefault`, reaches the model as the two
+    /// classes it names.
+    #[test]
+    fn w14_ligatures_reads_the_classes_it_names() {
+        let xml = r#"<rPr xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">
+            <kern val="2"/>
+            <w14:ligatures w14:val="standardContextual"/>
+        </rPr>"#;
+        let (rp, _) = parse(xml);
+        let set = rp.ligatures.cloned().expect("parsed");
+        assert!(set.contains(Ligatures::STANDARD) && set.contains(Ligatures::CONTEXTUAL));
+        assert!(!set.contains(Ligatures::HISTORICAL));
+    }
+
+    /// `none` is a value — an explicit off that overrides a style's
+    /// ligatures — and not an absent element.
+    #[test]
+    fn w14_ligatures_none_is_an_explicit_empty_set() {
+        let xml = r#"<rPr xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">
+            <w14:ligatures w14:val="none"/>
+        </rPr>"#;
+        let (rp, _) = parse(xml);
+        assert_eq!(rp.ligatures.cloned(), Some(Ligatures::NONE));
     }
 }

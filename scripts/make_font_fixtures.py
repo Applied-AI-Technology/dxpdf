@@ -319,6 +319,12 @@ def main() -> None:
     # See `build_kerned`.
     write(build_kerned(), "DxKern.ttf")
 
+    # ── A ligated font ───────────────────────────────────────────────────
+    #
+    # One standard ligature, and a `kern` pair that only exists between the
+    # ligature and what follows it. See `build_ligated`.
+    write(build_ligated(), "DxLiga.ttf")
+
     print("done — commit the results")
 
 
@@ -509,6 +515,80 @@ def build_kerned() -> TTFont:
     sub.kernTable = {
         (_glyph_name(a), _glyph_name(b)): v for (a, b), v in KERN_TABLE_PAIRS.items() if v
     }
+    kern.kernTables = [sub]
+    fb.font["kern"] = kern
+    fb.font["head"].created = EPOCH
+    fb.font["head"].modified = EPOCH
+    fb.font["head"].macStyle = 0
+    return fb.font
+
+
+# `f` `i` → `f_i`, narrower than the two letters it replaces, as a standard
+# (`liga`) ligature — the class Word's `w14:ligatures="standard"` asks for.
+LIGA_FEATURES = """
+languagesystem DFLT dflt;
+languagesystem latn dflt;
+
+feature liga { sub f i by f_i; } liga;
+"""
+
+
+def build_ligated() -> TTFont:
+    """A font with one ligature — `w14:ligatures` in `tests/ligatures.rs`.
+
+    Every advance is 500 units except the ligature's 700, so a word is its
+    length in letters, less 300 units for each `fi` it ligates. Its `kern`
+    table has one pair, `f_i` against `f` at −50 units: a pair between a
+    ligature and its neighbour, which can only be kerned from the shaped glyph
+    sequence and not from the letters, as Word kerns ligated text.
+    """
+    names = [".notdef", "space"] + [_glyph_name(c) for c in KERN_CHARS] + ["f_i"]
+    fb = FontBuilder(UPM, isTTF=True)
+    fb.setupGlyphOrder(names)
+    fb.setupCharacterMap({0x20: "space", **{ord(c): _glyph_name(c) for c in KERN_CHARS}})
+    glyphs = {}
+    for name in names:
+        pen = TTGlyphPen(None)
+        if name not in (".notdef", "space"):
+            pen.moveTo((50, 0))
+            pen.lineTo((50, 700))
+            pen.lineTo((450, 700))
+            pen.lineTo((450, 0))
+            pen.closePath()
+        glyphs[name] = pen.glyph()
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics({name: (700 if name == "f_i" else 500, 50) for name in names})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable(
+        {
+            "familyName": "Dx Liga",
+            "styleName": "Regular",
+            "fullName": "Dx Liga Regular",
+            "psName": "DxLiga-Regular",
+            "version": "Version 1.000",
+        }
+    )
+    fb.setupOS2(
+        version=3,
+        sTypoAscender=800,
+        sTypoDescender=-200,
+        usWeightClass=400,
+        usWidthClass=5,
+        fsSelection=0b1000000,
+        achVendID="DXPD",
+    )
+    fb.setupPost()
+    fb.addOpenTypeFeatures(LIGA_FEATURES)
+    from fontTools.ttLib.tables._k_e_r_n import KernTable_format_0
+
+    kern = newTable("kern")
+    kern.version = 0
+    sub = KernTable_format_0()
+    sub.version = 0
+    sub.format = 0
+    sub.coverage = 1  # horizontal
+    sub.tupleIndex = None
+    sub.kernTable = {("f_i", "f"): -50}
     kern.kernTables = [sub]
     fb.font["kern"] = kern
     fb.font["head"].created = EPOCH

@@ -513,9 +513,14 @@ pub(super) fn resolve_paragraph_bidi(
     // Then shaping, which needs the levels the line above resolved: a run's
     // direction is its embedding level, and nothing about the run's own
     // characters says whether it is a Latin phrase quoted inside Arabic.
-    // §17.3.2.19 kerning is applied by the same pass, and is why it takes the
-    // vector: a kerned token a run boundary split is joined first.
-    crate::render::layout::fragment::shape_runs(fragments, ctx.measurer);
+    // §17.3.2.19 kerning and `w14:ligatures` are applied by the same pass, and
+    // are why it takes the vector: a token a run boundary split is joined
+    // first.
+    crate::render::layout::fragment::shape_runs(
+        fragments,
+        ctx.measurer,
+        ctx.resolved.compat.open_type_features(),
+    );
 }
 
 pub(super) fn build_fragments(

@@ -57,6 +57,7 @@ pub fn merge_run_properties(target: &mut RunProperties, base: &RunProperties) {
         lang,
         border,
         text_scale,
+        ligatures,
     );
 }
 
@@ -554,6 +555,7 @@ mod tests {
                 color: Color::BLACK,
             })),
             text_scale: Dup::from(Some(TextScale::new(80))),
+            ligatures: Dup::from(Some(crate::model::Ligatures::STANDARD)),
         };
         let mut target = RunProperties::default();
         merge_run_properties(&mut target, &base);
@@ -568,6 +570,7 @@ mod tests {
         assert!(target.vertical_align.cloned().is_some());
         assert!(target.spacing.cloned().is_some());
         assert!(target.kerning.cloned().is_some());
+        assert!(target.ligatures.cloned().is_some());
         assert!(target.all_caps.is_some());
         assert!(target.small_caps.is_some());
         assert!(target.vanish.is_some());

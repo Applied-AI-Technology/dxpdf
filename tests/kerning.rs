@@ -68,7 +68,7 @@ fn pt(units: f32, size: f32) -> f32 {
 
 /// A kerned line is shorter than the control by the `kern` table's pairs
 /// exactly. Word: K1's span is 5.74pt shorter than K2's in Calibri, the `kern`
-/// table's figure; GPOS would have made it 9.75pt.
+/// table's figure; GPOS would have made it nearly 10pt.
 #[test]
 fn a_kerned_line_is_kerned_by_the_kern_table() {
     let p = pages();

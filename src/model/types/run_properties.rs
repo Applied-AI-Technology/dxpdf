@@ -51,6 +51,66 @@ pub struct RunProperties {
     /// Scales glyph advances horizontally without affecting font size or
     /// inter-character spacing (`w:spacing`). Default 100% (no scaling).
     pub text_scale: Dup<TextScale>,
+    /// [MS-DOCX] §2.6.1 `w14:ligatures`: which classes of OpenType ligature
+    /// the run takes. Absent is none — Word applies no ligature it is not
+    /// asked for.
+    pub ligatures: Dup<Ligatures>,
+}
+
+/// [MS-DOCX] `ST_Ligatures`: a set of the four OpenType ligature classes —
+/// standard (`liga`), contextual (`clig`), historical (`hlig`) and
+/// discretional (`dlig`). Written as one camel-cased value naming the members
+/// (`standardContextual`), or `none` or `all`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Ligatures(u8);
+
+impl Ligatures {
+    pub const NONE: Self = Self(0);
+    pub const STANDARD: Self = Self(1);
+    pub const CONTEXTUAL: Self = Self(2);
+    pub const HISTORICAL: Self = Self(4);
+    pub const DISCRETIONAL: Self = Self(8);
+    pub const ALL: Self = Self(15);
+
+    /// Parse an `ST_Ligatures` value; `None` for one that names no class.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "none" => return Some(Self::NONE),
+            "all" => return Some(Self::ALL),
+            _ => {}
+        }
+        let mut set = Self::NONE;
+        let mut rest = value;
+        while !rest.is_empty() {
+            let (class, len) = [
+                (Self::STANDARD, "standard"),
+                (Self::CONTEXTUAL, "contextual"),
+                (Self::HISTORICAL, "historical"),
+                (Self::DISCRETIONAL, "discretional"),
+            ]
+            .into_iter()
+            .find_map(|(class, word)| {
+                let head = rest.get(..word.len())?;
+                head.eq_ignore_ascii_case(word)
+                    .then_some((class, word.len()))
+            })?;
+            set = set.union(class);
+            rest = &rest[len..];
+        }
+        Some(set)
+    }
+
+    pub fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub fn contains(self, class: Self) -> bool {
+        self.0 & class.0 == class.0
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
 }
 
 /// §17.18.81 ST_TextScale — integer percent in `1..=600`. Default 100.
@@ -258,4 +318,30 @@ pub enum HighlightColor {
     Red,
     White,
     Yellow,
+}
+
+#[cfg(test)]
+mod ligatures_tests {
+    use super::Ligatures;
+
+    /// Every `ST_Ligatures` spelling is a camel-cased run of class names, so
+    /// the parse is of the words, in order, and nothing is left over.
+    #[test]
+    fn st_ligatures_values_parse_to_their_classes() {
+        let s = Ligatures::STANDARD;
+        let c = Ligatures::CONTEXTUAL;
+        let h = Ligatures::HISTORICAL;
+        let d = Ligatures::DISCRETIONAL;
+        for (value, want) in [
+            ("none", Ligatures::NONE),
+            ("standard", s),
+            ("contextual", c),
+            ("standardContextual", s.union(c)),
+            ("contextualHistoricalDiscretional", c.union(h).union(d)),
+            ("all", Ligatures::ALL),
+        ] {
+            assert_eq!(Ligatures::parse(value), Some(want), "{value}");
+        }
+        assert_eq!(Ligatures::parse("standardish"), None);
+    }
 }

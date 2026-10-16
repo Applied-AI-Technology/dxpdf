@@ -17,7 +17,7 @@ use crate::render::resolve::color::RgbColor;
 use crate::render::resolve::fonts::effective_font;
 use crate::render::resolve::images::MediaEntry;
 use crate::render::resolve::shading::ResolvedShading;
-use crate::render::shape::RunDirection;
+use crate::render::shape::Shaping;
 
 mod bidi;
 mod collect;
@@ -264,8 +264,9 @@ pub struct FontProps {
     pub underline_position: Pt,
     /// Underline thickness from font metrics.
     pub underline_thickness: Pt,
-    /// The typography the run's formatting turns on beyond its face — today
-    /// §17.3.2.19 kerning, applied by `layout::fragment::shape`.
+    /// The typography the run's formatting turns on beyond its face —
+    /// §17.3.2.19 kerning and `w14:ligatures` — applied by
+    /// `layout::fragment::shape`.
     pub features: crate::render::shape::TypographicFeatures,
 }
 
@@ -418,10 +419,10 @@ pub enum Fragment {
         /// bidirectional text, which is what lets the reorder be skipped
         /// outright there.
         level: BidiLevel,
-        /// Whether this run must be shaped to be legible, and which way round
-        /// — `None` for every run in a script that a cmap lookup renders
-        /// correctly, which is all of Latin, Cyrillic, Greek, CJK, Hebrew and
-        /// Thai.
+        /// Whether this run goes through the shaper, which way round, and for
+        /// what — `None` for every run in a script that a cmap lookup renders
+        /// correctly (all of Latin, Cyrillic, Greek, CJK, Hebrew and Thai)
+        /// that takes no ligatures either.
         ///
         /// Set by `layout::fragment::shape`, which is also what re-measures
         /// the fragment against the shaped advance, so `width` below and what
@@ -429,7 +430,7 @@ pub enum Fragment {
         /// at paint from the text, because a second copy of
         /// [`needs_shaping`](crate::render::shape::needs_shaping) is the kind
         /// of duplicate rule issue #130 was spent removing.
-        shaped: Option<RunDirection>,
+        shaped: Option<Shaping>,
         /// §17.3.2.19: the kerning after each spacing unit of `text` (UAX #29
         /// grapheme, [`crate::render::spacing`]) — the pair it forms with the
         /// next unit, in points, already in `width`. `None` for a run that is
@@ -802,6 +803,7 @@ pub fn font_props_from_run(
         underline_thickness: Pt::ZERO,
         features: crate::render::shape::TypographicFeatures {
             kern: kerns_at(rp.kerning.cloned(), size),
+            ligatures: rp.ligatures.cloned().unwrap_or_default(),
         },
     }
 }

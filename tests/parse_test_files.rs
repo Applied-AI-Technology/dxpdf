@@ -447,6 +447,9 @@ const ALL_FILES: &[&str] = &[
     "table-indent-compat-14.docx",
     "table-indent-compat-none.docx",
     "kerning.docx",
+    "ligatures-15.docx",
+    "ligatures-14.docx",
+    "ligatures-14otf.docx",
 ];
 
 #[test]
