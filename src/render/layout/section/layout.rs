@@ -117,10 +117,6 @@ struct PageLayoutState<'doc> {
     abs_floats_dirty: bool,
     /// Index of the first block on the current page (for forward scanning).
     page_start_block: usize,
-    /// §17.4.57: y-start of the most recent paragraph (floating-table anchor).
-    /// Set after that paragraph's spacing collapse but before its
-    /// `space_before` is added.
-    last_para_start_y: Pt,
     /// §17.4.38: style_id of the previous table for adjacent border collapse.
     prev_table_style_id: Option<StyleId>,
     /// §17.3.3.1: an inline page break at the end of a paragraph defers the
@@ -146,7 +142,6 @@ impl<'doc> PageLayoutState<'doc> {
             Some(c) => PageLayoutState {
                 pages: Vec::new(),
                 column_top: c.cursor_y,
-                last_para_start_y: c.last_para_start_y,
                 current_page: c.page,
                 cursor_y: c.cursor_y,
                 page_index: 0,
@@ -193,7 +188,6 @@ impl<'doc> PageLayoutState<'doc> {
             None => PageLayoutState {
                 pages: Vec::new(),
                 column_top: bounds.top,
-                last_para_start_y: bounds.top,
                 current_page: LayoutedPage::new(config.page_size),
                 cursor_y: bounds.top,
                 page_index: 0,
@@ -392,7 +386,6 @@ impl<'doc> PageLayoutState<'doc> {
                         prev_style_id: self.prev_style_id,
                         prev_borders: self.prev_borders,
                         prev_table_style_id: self.prev_table_style_id,
-                        last_para_start_y: self.last_para_start_y,
                         pending_page_break: self.pending_page_break,
                     }),
                 }
@@ -561,7 +554,6 @@ struct PageReplayCheckpoint<'doc> {
     current_page_abs_floats: Vec<float::ActiveFloat>,
     abs_floats_dirty: bool,
     page_start_block: usize,
-    last_para_start_y: Pt,
     prev_table_style_id: Option<StyleId>,
     pending_page_break: bool,
 }
@@ -587,7 +579,6 @@ impl<'doc> PageReplayCheckpoint<'doc> {
             current_page_abs_floats: state.current_page_abs_floats.clone(),
             abs_floats_dirty: state.abs_floats_dirty,
             page_start_block: state.page_start_block,
-            last_para_start_y: state.last_para_start_y,
             prev_table_style_id: state.prev_table_style_id.clone(),
             pending_page_break: state.pending_page_break,
         }
@@ -614,7 +605,6 @@ impl<'doc> PageReplayCheckpoint<'doc> {
             .clone_from(&self.current_page_abs_floats);
         state.abs_floats_dirty = self.abs_floats_dirty;
         state.page_start_block = self.page_start_block;
-        state.last_para_start_y = self.last_para_start_y;
         state
             .prev_table_style_id
             .clone_from(&self.prev_table_style_id);
@@ -2046,7 +2036,6 @@ pub(crate) fn layout_section_with_clearance(
                 // then §17.6.4: split each page-chunk at column breaks.
                 let page_chunks = split_at_page_breaks(fragments);
                 let mut para_start_y = state.cursor_y;
-                state.last_para_start_y = state.cursor_y;
                 // Issue #86 (float relocation): true once any of this paragraph's
                 // content has been placed, so a later overflow relocates its
                 // absolute float instead of double-wrapping earlier text.
@@ -2508,20 +2497,28 @@ pub(crate) fn layout_section_with_clearance(
                     // the body comes back as `OnCurrentPage` and is sliced
                     // by the pagination call below, never re-resolved.
                     let float_y_start = loop {
-                        let requested_y = if fi.y_offset > Pt::ZERO {
-                            let anchor_y = match fi.vert_anchor {
-                                crate::model::TableAnchor::Text => {
-                                    state.last_para_start_y + fi.y_offset
-                                }
-                                crate::model::TableAnchor::Margin => state.page_top + fi.y_offset,
-                                crate::model::TableAnchor::Page => fi.y_offset,
-                            };
-                            // The table must not start above the cursor —
-                            // preceding content already occupies the space
-                            // above it.
-                            anchor_y.max(state.cursor_y)
-                        } else {
-                            state.cursor_y
+                        let requested_y = match fi.vert_anchor {
+                            // §17.4.57 `vertAnchor="text"`: from the top of the
+                            // paragraph that follows the table, which is where
+                            // the cursor stands, by `tblpY` either way — up
+                            // over the paragraph before it as well. Measured in
+                            // Word (Word for Mac 16, 2026-10-16),
+                            // `test-files/floating-table-wrap-*.docx`: 20pt puts
+                            // the table 20pt below a one-line or a three-line
+                            // paragraph's foot alike, and −10pt 10pt above it.
+                            crate::model::TableAnchor::Text => state.cursor_y + fi.y_offset,
+                            anchor if fi.y_offset > Pt::ZERO => {
+                                let anchor_y = if anchor == crate::model::TableAnchor::Margin {
+                                    state.page_top + fi.y_offset
+                                } else {
+                                    fi.y_offset
+                                };
+                                // The table must not start above the cursor —
+                                // preceding content already occupies the space
+                                // above it.
+                                anchor_y.max(state.cursor_y)
+                            }
+                            _ => state.cursor_y,
                         };
 
                         match resolve_floating_anchor(

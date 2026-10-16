@@ -416,8 +416,6 @@ pub struct ContinuationState {
     pub prev_borders: Option<ParagraphBorderStyle>,
     /// §17.4.38: for adjacent-table border collapse across the break.
     pub prev_table_style_id: Option<StyleId>,
-    /// §17.4.58: anchor for a floating table in the succeeding section.
-    pub last_para_start_y: Pt,
     /// §17.3.3.1: an inline page break at the end of the preceding section is
     /// deferred to the next block — which is in the succeeding section.
     pub pending_page_break: bool,
