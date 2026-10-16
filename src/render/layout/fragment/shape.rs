@@ -110,6 +110,11 @@ fn ligatures_of(font: &FontProps, open_type: bool) -> crate::model::Ligatures {
 /// half measured on its own.
 pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer, open_type: bool) {
     join_split_words(fragments, open_type);
+    shape_each(fragments, measurer, open_type);
+    kern_across_breaks(fragments, measurer);
+}
+
+fn shape_each(fragments: &mut [Fragment], measurer: &TextMeasurer, open_type: bool) {
     for fragment in fragments.iter_mut() {
         let Fragment::Text {
             text,
@@ -198,6 +203,72 @@ pub fn shape_runs(fragments: &mut Vec<Fragment>, measurer: &TextMeasurer, open_t
             *width = m.advance;
             *trimmed_width = m.advance * ratio;
         }
+    }
+}
+
+/// Kern the pair two neighbouring fragments of one kerned run form where a
+/// line-break opportunity split them — `{/` and `summaryItems}`, which UAX #14
+/// lets a line break between. Word kerns the text as the string it is: the
+/// corpus's DogLicenseReport sets `{total_count}{/summaryItems}` in bold
+/// Calibri 140.76pt wide, which is the whole string kerned (140.74pt) and not
+/// its three pieces kerned apart (141.04pt), and so fits the 140.75pt cell
+/// that the pieces would have wrapped in.
+///
+/// The pair goes into the left fragment's `width`, which is what places the
+/// next fragment on the same line, and not into its `trimmed_width`, which is
+/// what a line ending there measures — no pair is formed across a line break.
+/// No font kerns against a space, so a fragment ending in one is skipped.
+fn kern_across_breaks(fragments: &mut [Fragment], measurer: &TextMeasurer) {
+    for i in 1..fragments.len() {
+        let (left, right) = fragments.split_at_mut(i);
+        let (
+            Some(Fragment::Text {
+                text: lt,
+                font: lf,
+                level: ll,
+                shaped: ls,
+                kerning,
+                width,
+                ..
+            }),
+            Some(Fragment::Text {
+                text: rt,
+                font: rf,
+                level: rl,
+                shaped: rs,
+                ..
+            }),
+        ) = (left.last_mut(), right.first())
+        else {
+            continue;
+        };
+        if !lf.features.kern
+            || ll != rl
+            || ls.is_some_and(|s| s.complex)
+            || rs.is_some_and(|s| s.complex)
+            || !(Rc::ptr_eq(lf, rf) || **lf == **rf)
+        {
+            continue;
+        }
+        let (Some(a), Some(b)) = (lt.chars().last(), rt.chars().next()) else {
+            continue;
+        };
+        if a.is_whitespace() || b.is_whitespace() {
+            continue;
+        }
+        let pair = measurer.kern_pair(lf, a, b);
+        if pair == 0.0 {
+            continue;
+        }
+        *width += crate::render::dimension::Pt::new(pair);
+        let units = crate::render::spacing::unit_count(lt);
+        let mut pairs: Vec<f32> = kerning
+            .as_deref()
+            .map_or_else(|| vec![0.0; units], <[f32]>::to_vec);
+        if let Some(last) = pairs.last_mut() {
+            *last += pair;
+        }
+        *kerning = Some(Rc::from(pairs));
     }
 }
 

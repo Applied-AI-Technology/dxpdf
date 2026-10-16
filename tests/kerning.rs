@@ -153,3 +153,65 @@ fn the_draw_command_carries_the_pairs_it_was_measured_with() {
         assert!((got - want).abs() < 1e-4, "{pairs:?}");
     }
 }
+
+/// A pair that straddles a line-break opportunity is kerned when the two sides
+/// share a line — UAX #14 splits `AY/AY-YA` after the `/` and the `-`, and
+/// Word kerns `/A` and `-Y` all the same. `DxKern` has A·Y −100 twice, /·A −50
+/// and -·Y −40 here. Word: K7's `END` sits where Calibri's pairs put it,
+/// across both breaks.
+#[test]
+fn a_pair_across_a_line_break_opportunity_is_kerned() {
+    let p = pages();
+    let shift = x_on(&p, "K7", "END") - x_on(&p, "K8", "END");
+    assert!(
+        (shift - pt(-290.0, 11.0)).abs() < TOL,
+        "want {}, got {shift}",
+        pt(-290.0, 11.0)
+    );
+}
+
+/// A word too wide for its cell is cut where it overflows, and the pieces keep
+/// the pairs the word was kerned by. In a 50pt cell (39.2pt inside its
+/// margins) `DxKern`'s 5.5pt letters fit seven to a line unkerned and eight
+/// kerned, AV and VA each taking 0.88pt off. Word cuts K9 and K9b where
+/// Calibri's kerned and unkerned widths do.
+#[test]
+fn a_cut_word_keeps_its_pairs() {
+    let p = pages();
+    let label_y = |label: &str| {
+        p[0].commands
+            .iter()
+            .find_map(|c| match c {
+                DrawCommand::Text { text, position, .. } if &**text == label => {
+                    Some(position.y.raw())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no {label}"))
+    };
+    // Letters of the cut word under `label`, grouped into lines.
+    let first_line = |label: &str| {
+        let top = label_y(label);
+        let mut ys: Vec<f32> = p[0]
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { text, position, .. }
+                    if (&**text == "A" || &**text == "V") && position.y.raw() > top =>
+                {
+                    Some(position.y.raw())
+                }
+                _ => None,
+            })
+            .collect();
+        ys.sort_by(f32::total_cmp);
+        let first = ys[0];
+        ys.iter().filter(|&&y| (y - first).abs() < 0.01).count()
+    };
+    assert_eq!(
+        first_line("K9"),
+        8,
+        "kerned: eight letters to the first line"
+    );
+    assert_eq!(first_line("K9b"), 7, "unkerned: seven");
+}

@@ -244,6 +244,30 @@ impl<'r> TextMeasurer<'r> {
         })
     }
 
+    /// §17.3.2.19: the `kern`-table pair between `left` and `right` in
+    /// `font_props`' face, in points, scaled by §17.3.2.45 — for the pair two
+    /// fragments of one kerned run form where a line-break opportunity
+    /// separates them.
+    pub fn kern_pair(&self, font_props: &FontProps, left: char, right: char) -> f32 {
+        let typeface = {
+            let mut font_cache = self.font_cache.borrow_mut();
+            font_cache
+                .get(
+                    self.registry,
+                    &font_props.family,
+                    font_props.size,
+                    font_props.bold,
+                    font_props.italic,
+                )
+                .typeface()
+        };
+        let Some(table) = self.kern_table(&typeface) else {
+            return 0.0;
+        };
+        let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
+        table.pair_at(glyph(left), glyph(right), f32::from(font_props.size)) * font_props.text_scale
+    }
+
     /// `typeface`'s `kern` table, read once per render.
     fn kern_table(
         &self,

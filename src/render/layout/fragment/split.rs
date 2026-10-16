@@ -87,6 +87,7 @@ pub fn split_oversized_fragments(
             baseline_offset,
             level,
             shaped,
+            kerning,
             ..
         } = frag
         else {
@@ -100,11 +101,23 @@ pub fn split_oversized_fragments(
 
         let unit_count = spacing::unit_count(text);
         let per_unit_fallback = *width / unit_count as f32;
-        for unit in spacing::units(text) {
+        for (i, unit) in spacing::units(text).enumerate() {
             let (w, unit_metrics) = match measure {
                 Some(m) => m(unit, font),
                 None => (per_unit_fallback, *metrics),
             };
+            // §17.3.2.19: the pair this unit forms with the next, which the
+            // whole word was kerned by. It places the next piece when the two
+            // share a line and is dropped at a line end — no pair is formed
+            // across a line break — exactly as between two words
+            // (`fragment::shape`'s `kern_across_breaks`). Word cuts the
+            // kerned word: DogLicenseReport's `${apcp_fee}` fits `p_fee}` on
+            // its second line, which the unkerned pieces overflow.
+            let pair = kerning
+                .as_deref()
+                .and_then(|k| k.get(i))
+                .copied()
+                .unwrap_or(0.0);
             result.push(Fragment::Text {
                 // Kept, though it buys little: a single cluster shapes to its
                 // isolated form, which is what the cmap would have given
@@ -112,8 +125,7 @@ pub fn split_oversized_fragments(
                 // that is already this module's documented last resort — it
                 // now costs a joining script more than it costs Latin.
                 shaped: *shaped,
-                // One unit forms no pair, and the piece is measured unkerned.
-                kerning: None,
+                kerning: (pair != 0.0).then(|| Rc::from([pair].as_slice())),
                 // UAX #9: a cluster of the parent's text is at the parent's
                 // level. Cutting a word never crosses a level boundary —
                 // `fragment::bidi` has already split at every one of those, so
@@ -136,7 +148,7 @@ pub fn split_oversized_fragments(
                 // fit. That is the order Word applies too: move the word down
                 // first, cut it only if it still won't fit.
                 break_after: BreakAfter::Prohibited,
-                width: w,
+                width: w + Pt::new(pair),
                 trimmed_width: w,
                 metrics: unit_metrics,
                 hyperlink_url: hyperlink_url.clone(),

@@ -16,6 +16,12 @@ its run properties:
   K6  — ``w:kern`` 2 and ``w:spacing`` 20 (1pt)
   K6b — ``w:spacing`` 20 alone
   K12 — ``w:kern`` 0
+  K7  — ``AY/AY-YA`` kerned: pairs across the line-break opportunities after
+        ``/`` and ``-`` (``/A`` and ``-Y``, both kerned in Calibri)
+  K8  — the same unkerned
+  K9  — a 50pt one-cell table holding ``AVAVAVAVAVAVAVAVAVAV``, kerned: a word
+        too wide for its cell, cut where it overflows
+  K9b — the same unkerned
 
 The document asks for ``compatibilityMode`` 15; Word kerns the same in modes 14
 and absent. It carries its own ``styles.xml`` for the reason
@@ -135,7 +141,24 @@ def body() -> str:
             line("K6", kern(2) + SPACING),
             line("K6b", SPACING),
             line("K12", kern(0)),
+            para(run("K7 AY/AY-YA END", kern(2))),
+            para(run("K8 AY/AY-YA END")),
+            para(run("K9", kern(2))),
+            narrow_cell("AVAVAVAVAVAVAVAVAVAV", kern(2)),
+            para(run("K9b")),
+            narrow_cell("AVAVAVAVAVAVAVAVAVAV", ""),
+            para(run("END")),
         ]
+    )
+
+
+def narrow_cell(text: str, rpr: str) -> str:
+    """A one-cell table 1000 twips (50pt) wide, `TableNormal`'s margins."""
+    return (
+        '<w:tbl><w:tblPr><w:tblW w:w="1000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>'
+        '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc>'
+        '<w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr>'
+        f"{para(run(text, rpr))}</w:tc></w:tr></w:tbl>"
     )
 
 

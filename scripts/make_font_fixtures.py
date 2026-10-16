@@ -433,6 +433,9 @@ KERN_TABLE_PAIRS = {
     ("y", "o"): -20,
     ("o", "w"): -10,
     ("K", "1"): 0,
+    # Across the line-break opportunities after `/` and `-`.
+    ("/", "A"): -50,
+    ("-", "Y"): -40,
 }
 
 KERN_GPOS_FEATURES = """
