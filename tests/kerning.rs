@@ -9,18 +9,27 @@
 //! 1000-unit em, so a line's width is its length plus exactly the pairs it was
 //! kerned by — and its `GPOS` kerns the same pairs at other values, so the
 //! assertions below also say which of the two tables the pairs came from.
+//!
+//! A font with no `kern` table is kerned from its `GPOS` pairs instead: the
+//! open stand-in for Calibri, Carlito, has none, and its `GPOS` pairs are
+//! Calibri's `kern` table. `DxGposKern.ttf` is `DxKern` in that shape.
 
 use dxpdf::model::{EmbeddedFont, EmbeddedFontVariant};
 use dxpdf::render::layout::draw_command::{DrawCommand, LayoutedPage};
 
 fn pages() -> Vec<LayoutedPage> {
+    pages_in("DxKern.ttf")
+}
+
+/// The fixture laid out in `font`, handed to it as an embedded "Calibri".
+fn pages_in(font: &str) -> Vec<LayoutedPage> {
     let dir = env!("CARGO_MANIFEST_DIR");
     let bytes = std::fs::read(format!("{dir}/test-files/kerning.docx")).expect("fixture");
     let mut doc = dxpdf::docx::parse(&bytes).expect("fixture parses");
     doc.embedded_fonts.push(EmbeddedFont {
         family: "Calibri".into(),
         variant: EmbeddedFontVariant::Regular,
-        data: std::fs::read(format!("{dir}/test-files/fonts/DxKern.ttf")).expect("font"),
+        data: std::fs::read(format!("{dir}/test-files/fonts/{font}")).expect("font"),
     });
     dxpdf::render::resolve_and_layout(doc).1
 }
@@ -214,4 +223,25 @@ fn a_cut_word_keeps_its_pairs() {
         "kerned: eight letters to the first line"
     );
     assert_eq!(first_line("K9b"), 7, "unkerned: seven");
+}
+
+/// A face with no `kern` table kerns from its `GPOS` pairs — glyph pairs,
+/// class pairs and an extension lookup alike — exactly as a face with the same
+/// pairs in a `kern` table does: K1 against K2, and K7 across its two
+/// line-break opportunities against K8, as in `DxKern`.
+#[test]
+fn a_face_without_a_kern_table_kerns_from_its_gpos_pairs() {
+    let p = pages_in("DxGposKern.ttf");
+    let shift = span(&p, "K1") - span(&p, "K2");
+    assert!(
+        (shift - pt(LINE_PAIRS, 11.0)).abs() < TOL,
+        "want {}, got {shift}",
+        pt(LINE_PAIRS, 11.0)
+    );
+    let across = x_on(&p, "K7", "END") - x_on(&p, "K8", "END");
+    assert!(
+        (across - pt(-290.0, 11.0)).abs() < TOL,
+        "want {}, got {across}",
+        pt(-290.0, 11.0)
+    );
 }

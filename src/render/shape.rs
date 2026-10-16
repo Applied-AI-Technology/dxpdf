@@ -112,8 +112,9 @@ impl From<BidiLevel> for RunDirection {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TypographicFeatures {
     /// §17.3.2.19 `w:kern`: pair kerning, on when the run's size has reached
-    /// the threshold the element states. Applied from the font's `kern` table,
-    /// not by this module's shaper — see [`crate::render::kern`].
+    /// the threshold the element states. Applied from the font's `kern` table
+    /// (or its `GPOS` pairs when it has none), not by this module's shaper —
+    /// see [`crate::render::kern`].
     pub kern: bool,
     /// [MS-DOCX] `w14:ligatures`: the ligature classes the run asks for. Word
     /// forms them only where the document's compatibility settings enable

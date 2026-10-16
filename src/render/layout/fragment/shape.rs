@@ -35,7 +35,7 @@
 //!    (`test-files/ligatures-*.docx`). Such a run is shaped with exactly the
 //!    classes it asks for and HarfBuzz's own kerning and contextual
 //!    alternates off (`TypographicFeatures::settings`), and kerned on top from
-//!    the `kern` table between the glyphs that leaves.
+//!    the font's pair kerning between the glyphs that leaves.
 //!
 //! # What this costs the rest of the corpus
 //!
@@ -65,8 +65,9 @@
 //! because it is the same kind of decision — a property of the finished
 //! fragment that changes its width — and because Word's answer is not the
 //! shaper's: Word kerns from the font's legacy `kern` table, not from GPOS
-//! (`render::kern`). A kerned fragment keeps the cmap path and carries its
-//! pairs (`Fragment::Text::kerning`). Word kerns alongside `w:spacing`, so the
+//! (`render::kern`, which reads `GPOS` pairs only for a face with no such
+//! table). A kerned fragment keeps the cmap path and carries its pairs
+//! (`Fragment::Text::kerning`). Word kerns alongside `w:spacing`, so the
 //! spacing stays as the cmap path applies it (`test-files/kerning.docx`, K6).
 //!
 //! Word kerns the pair a `<w:r>` boundary falls between when both runs kern —
@@ -136,7 +137,7 @@ fn shape_each(fragments: &mut [Fragment], measurer: &TextMeasurer, open_type: bo
             let ligatures = ligatures_of(font, open_type);
             if !ligatures.is_empty() {
                 // Reason 3: shaped for its ligatures, then kerned between the
-                // glyphs that leaves, from the `kern` table as ever.
+                // glyphs that leaves, from the same pairs as ever.
                 let shaping = Shaping {
                     direction: RunDirection::LeftToRight,
                     complex: false,

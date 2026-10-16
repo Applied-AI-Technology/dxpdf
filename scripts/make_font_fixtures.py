@@ -319,6 +319,12 @@ def main() -> None:
     # See `build_kerned`.
     write(build_kerned(), "DxKern.ttf")
 
+    # ── A font kerned in GPOS only ───────────────────────────────────────
+    #
+    # `DxKern`'s `kern`-table pairs, carried in `GPOS` and no `kern` table, as
+    # Carlito carries Calibri's. See `build_gpos_kerned`.
+    write(build_gpos_kerned(), "DxGposKern.ttf")
+
     # ── A ligated font ───────────────────────────────────────────────────
     #
     # One standard ligature, and a `kern` pair that only exists between the
@@ -457,7 +463,7 @@ def _glyph_name(c: str) -> str:
     return UV2AGL.get(ord(c), f"uni{ord(c):04X}")
 
 
-def build_kerned() -> TTFont:
+def build_kerned(extra_glyphs: tuple = ()) -> TTFont:
     """A font kerned twice over and disagreeing with itself — issue: Word kerns
     from the `kern` table.
 
@@ -468,8 +474,11 @@ def build_kerned() -> TTFont:
     so a run's width is its length plus exactly the pairs it was kerned by, and
     the two sources of pairs never agree. `tests/kerning.rs` lays the
     Word-measured fixture out in it.
+
+    `extra_glyphs` are appended to the glyph order with no character mapped to
+    them.
     """
-    names = [".notdef", "space"] + [_glyph_name(c) for c in KERN_CHARS]
+    names = [".notdef", "space"] + [_glyph_name(c) for c in KERN_CHARS] + list(extra_glyphs)
     fb = FontBuilder(UPM, isTTF=True)
     fb.setupGlyphOrder(names)
     fb.setupCharacterMap({0x20: "space", **{ord(c): _glyph_name(c) for c in KERN_CHARS}})
@@ -524,6 +533,67 @@ def build_kerned() -> TTFont:
     fb.font["head"].modified = EPOCH
     fb.font["head"].macStyle = 0
     return fb.font
+
+
+# `DxKern`'s `kern`-table pairs, in `GPOS`. One lookup holds glyph pairs (a
+# format 1 subtable) ahead of class pairs (format 2), and T·o is in both — the
+# glyph pair, first, decides it. A·Y sits in a lookup of its own reached
+# through an extension, as large fonts store theirs. `A.alt`, which no
+# character maps to (a ligature's or an alternate's place), kerns against `V`
+# as `A` does — a pair no `kern` table would hold.
+GPOS_ONLY_FEATURES = """
+languagesystem DFLT dflt;
+languagesystem latn dflt;
+
+lookup KERN_PAIRS {
+    pos A V -80;
+    pos A.alt V -80;
+    pos V A -80;
+    pos A W -60;
+    pos W A -60;
+    pos T o -90;
+    pos L T -110;
+    pos o w -10;
+    pos slash A -50;
+    pos hyphen Y -40;
+    pos [T] [o y] -70;
+    pos [y] [o] -20;
+} KERN_PAIRS;
+
+lookup KERN_EXTENSION useExtension {
+    pos A Y -100;
+} KERN_EXTENSION;
+
+feature kern {
+    lookup KERN_PAIRS;
+    lookup KERN_EXTENSION;
+} kern;
+"""
+
+
+def build_gpos_kerned() -> TTFont:
+    """`DxKern` with its `kern` table moved into `GPOS` — issue: a face with no
+    `kern` table is kerned from `GPOS`.
+
+    Carlito, the open stand-in for Calibri, has no `kern` table; its `GPOS`
+    pairs are Calibri's `kern` table, pair for pair. This fixture is that shape:
+    `DxKern`'s glyphs and its table's pairs, in `GPOS` only, so a document laid
+    out in it must kern exactly as one laid out in `DxKern` does. Its last glyph,
+    `A.alt`, is unmapped and kerned in `GPOS` only.
+    """
+    font = build_kerned(extra_glyphs=("A.alt",))
+    del font["kern"]
+    del font["GPOS"]
+    from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
+
+    addOpenTypeFeaturesFromString(font, GPOS_ONLY_FEATURES)
+    names = font["name"]
+    for record in list(names.names):
+        if record.nameID in (1, 3, 4, 6, 16):
+            text = record.toUnicode()
+            text = text.replace("Dx Kern", "Dx Gpos Kern").replace("DxKern", "DxGposKern")
+            names.setName(text, record.nameID, record.platformID, record.platEncID, record.langID)
+    return font
 
 
 # `f` `i` → `f_i`, narrower than the two letters it replaces, as a standard

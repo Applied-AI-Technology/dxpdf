@@ -435,7 +435,7 @@ pub enum Fragment {
         /// grapheme, [`crate::render::spacing`]) — the pair it forms with the
         /// next unit, in points, already in `width`. `None` for a run that is
         /// not kerned or whose pairs are all zero. Set by `layout::fragment::
-        /// shape` from the font's `kern` table ([`crate::render::kern`]) and
+        /// shape` from the font's pair kerning ([`crate::render::kern`]) and
         /// carried to the painter rather than looked up again there.
         kerning: Option<Rc<[f32]>>,
         /// Full width including trailing whitespace (used for positioning).

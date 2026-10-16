@@ -28,7 +28,7 @@ struct FontMeasureCache {
     widths: FxHashMap<Box<str>, f32>,
 }
 
-/// A run shaped by [`TextMeasurer::shaped`]: its advance, and the `kern`-table
+/// A run shaped by [`TextMeasurer::shaped`]: its advance, and the kerning
 /// pairs between its glyphs, one per spacing unit, where it was kerned.
 pub struct ShapedMeasure {
     pub advance: Pt,
@@ -73,9 +73,10 @@ pub struct TextMeasurer<'r> {
     /// words dominate. Uses FxHash: an earlier std-hasher width cache was
     /// net-negative on small docs due to per-word hashing overhead.
     measure_cache: RefCell<FxHashMap<usize, FontMeasureCache>>,
-    /// §17.3.2.19: each typeface's `kern` table, read once per render — `None`
-    /// for a typeface that has none, so it is not asked again.
-    kern_tables: RefCell<HashMap<u32, Option<std::rc::Rc<crate::render::kern::KernTable>>>>,
+    /// §17.3.2.19: each typeface's pair kerning ([`crate::render::kern`]), read
+    /// once per render — `None`
+    /// for a typeface that kerns no pairs, so it is not asked again.
+    pair_kernings: RefCell<HashMap<u32, Option<std::rc::Rc<crate::render::kern::PairKerning>>>>,
     /// Issue #139: per-glyph fallback's view of this render's font system.
     ///
     /// Here for the same reason `emoji_resolver` is — it memoizes host lookups
@@ -93,7 +94,7 @@ impl<'r> TextMeasurer<'r> {
             cluster_shaper: Shaper::new().ok(),
             emoji_advance_cache: RefCell::new(HashMap::new()),
             measure_cache: RefCell::new(FxHashMap::default()),
-            kern_tables: RefCell::new(HashMap::new()),
+            pair_kernings: RefCell::new(HashMap::new()),
             fallback: RegistryFallback::new(registry),
         }
     }
@@ -173,7 +174,7 @@ impl<'r> TextMeasurer<'r> {
 
     /// `text` **shaped** through HarfBuzz the way `shaping` says — for a run in
     /// a script that a cmap lookup renders wrongly, or one that takes ligatures
-    /// — as its advance, and, for a kerned ligature run, the `kern`-table pairs
+    /// — as its advance, and, for a kerned ligature run, the kerning pairs
     /// between the glyphs it shaped to, one per spacing unit (as
     /// [`TextMeasurer::kerning`] gives them for an unshaped run).
     ///
@@ -212,7 +213,7 @@ impl<'r> TextMeasurer<'r> {
             .shape_with(&typeface, text, f32::from(font_props.size), shaping)
             .ok()?;
         let kerning = if shaping.features.kern && !shaping.complex {
-            self.kern_table(&typeface).and_then(|table| {
+            self.pair_kerning(&typeface).and_then(|table| {
                 let starts = unit_starts(text);
                 let size = f32::from(font_props.size);
                 let mut pairs = vec![0.0f32; starts.len()];
@@ -244,7 +245,7 @@ impl<'r> TextMeasurer<'r> {
         })
     }
 
-    /// §17.3.2.19: the `kern`-table pair between `left` and `right` in
+    /// §17.3.2.19: the kerning pair between `left` and `right` in
     /// `font_props`' face, in points, scaled by §17.3.2.45 — for the pair two
     /// fragments of one kerned run form where a line-break opportunity
     /// separates them.
@@ -261,30 +262,30 @@ impl<'r> TextMeasurer<'r> {
                 )
                 .typeface()
         };
-        let Some(table) = self.kern_table(&typeface) else {
+        let Some(table) = self.pair_kerning(&typeface) else {
             return 0.0;
         };
         let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
         table.pair_at(glyph(left), glyph(right), f32::from(font_props.size)) * font_props.text_scale
     }
 
-    /// `typeface`'s `kern` table, read once per render.
-    fn kern_table(
+    /// `typeface`'s pair kerning, read once per render.
+    fn pair_kerning(
         &self,
         typeface: &skia_safe::Typeface,
-    ) -> Option<std::rc::Rc<crate::render::kern::KernTable>> {
-        self.kern_tables
+    ) -> Option<std::rc::Rc<crate::render::kern::PairKerning>> {
+        self.pair_kernings
             .borrow_mut()
             .entry(typeface.unique_id())
-            .or_insert_with(|| crate::render::kern::KernTable::of(typeface).map(std::rc::Rc::new))
+            .or_insert_with(|| crate::render::kern::PairKerning::of(typeface).map(std::rc::Rc::new))
             .clone()
     }
 
     /// §17.3.2.19: the kerning after each spacing unit of `text` in
     /// `font_props`' face — the pair its last glyph forms with the next unit's
-    /// first, from the face's `kern` table ([`crate::render::kern`]), in points
+    /// first, from the face's pair kerning ([`crate::render::kern`]), in points
     /// and scaled by §17.3.2.45 like the advances it adjusts. The last unit's
-    /// is zero. `None` when the face has no `kern` table or no pair in `text`
+    /// is zero. `None` when the face kerns no pairs or no pair in `text`
     /// is kerned.
     pub fn kerning(&self, text: &str, font_props: &FontProps) -> Option<std::rc::Rc<[f32]>> {
         let mut font_cache = self.font_cache.borrow_mut();
@@ -297,7 +298,7 @@ impl<'r> TextMeasurer<'r> {
         );
         let typeface = font.typeface();
         drop(font_cache);
-        let table = self.kern_table(&typeface)?;
+        let table = self.pair_kerning(&typeface)?;
         let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
         let units: Vec<&str> = crate::render::spacing::units(text).collect();
         let size = f32::from(font_props.size);
