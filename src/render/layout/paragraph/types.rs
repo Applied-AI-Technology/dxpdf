@@ -37,6 +37,11 @@ pub struct ParagraphStyle {
     pub base_direction: BaseDirection,
     pub space_before: Pt,
     pub space_after: Pt,
+    /// §17.3.1.33: whether `space_before` survives the top of a page that is
+    /// not its section's first. Word drops it there, except for a §17.3.1.23
+    /// `pageBreakBefore` paragraph in a document older than Word 2013 — see
+    /// `PageLayoutState::drops_space_before`.
+    pub keeps_space_before_at_page_top: bool,
     /// §17.3.1.12 `w:ind/@w:start`. **Logical**: the inset at the edge text
     /// flows *from*, which is the right margin when `base_direction` is
     /// right-to-left. Named `left` because that is where it lands in every
@@ -170,6 +175,7 @@ impl ParagraphStyle {
             base_direction: self.base_direction,
             space_before: self.space_before,
             space_after: self.space_after,
+            keeps_space_before_at_page_top: self.keeps_space_before_at_page_top,
             indent_left: self.indent_left,
             indent_right: self.indent_right,
             indent_first_line: self.indent_first_line,
@@ -204,6 +210,7 @@ impl Default for ParagraphStyle {
             base_direction: BaseDirection::Ltr,
             space_before: Pt::ZERO,
             space_after: Pt::ZERO,
+            keeps_space_before_at_page_top: false,
             indent_left: Pt::ZERO,
             indent_right: Pt::ZERO,
             indent_first_line: Pt::ZERO,

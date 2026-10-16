@@ -410,6 +410,9 @@ pub(super) fn paragraph_style_from_props(
         base_direction: base_direction(props),
         space_before,
         space_after,
+        // Needs the document's compatibility mode, which the paragraph's own
+        // properties do not carry; `build::block` sets it.
+        keeps_space_before_at_page_top: false,
         indent_left,
         indent_right,
         indent_first_line,

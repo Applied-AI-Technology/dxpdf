@@ -283,6 +283,7 @@ pub(super) fn build_paragraph_block(
     }
 
     let page_break_before = merged_props.page_break_before.unwrap_or(false);
+    style.keeps_space_before_at_page_top = page_break_before && !ctx.resolved.compat.is_word_2013();
 
     // §17.11.12: render a body for each footnote this paragraph referenced.
     // `collect_fragments` recorded them — id *and* the display number it

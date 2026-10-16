@@ -2092,10 +2092,12 @@ mod tests {
         assert_eq!(text_count, 1);
     }
 
-    // ── §17.3.1.33 space_before suppression tests ──────────────────────
+    // ── §17.3.1.33 space_before at the top of a page ──────────────────
 
     #[test]
-    fn space_before_suppressed_for_first_paragraph_of_section() {
+    fn space_before_kept_for_first_paragraph_of_section() {
+        // §17.3.1.33 as Word draws it: the section's first page keeps the
+        // space — a 72pt space before puts the first line 72pt down.
         let style = ParagraphStyle {
             space_before: Pt::new(24.0),
             ..Default::default()
@@ -2110,24 +2112,23 @@ mod tests {
         }];
         let config = small_config();
         let pages = layout_section(&blocks, &config, None, Pt::ZERO, Pt::new(14.0), None);
-
-        // First paragraph on the section's initial page: space_before suppressed.
-        if let Some(DrawCommand::Text { position, .. }) = pages[0].commands.first() {
-            assert!(
-                position.y.raw() < config.margins.top.raw() + 24.0,
-                "space_before should be suppressed: y={}",
-                position.y.raw()
-            );
-        }
+        let Some(DrawCommand::Text { position, .. }) = pages[0].commands.first() else {
+            panic!("the heading is drawn");
+        };
+        assert!(
+            position.y.raw() > config.margins.top.raw() + 24.0,
+            "space_before should be kept: y={}",
+            position.y.raw()
+        );
     }
 
-    #[test]
-    fn space_before_preserved_for_page_break_before() {
+    /// y of "heading" on page 2, forced there by `pageBreakBefore`.
+    fn heading_after_page_break_before(keeps: bool) -> f32 {
         let heading_style = ParagraphStyle {
             space_before: Pt::new(24.0),
+            keeps_space_before_at_page_top: keeps,
             ..Default::default()
         };
-
         let blocks = vec![
             para_block("first page", 30.0),
             LayoutBlock::Paragraph {
@@ -2141,25 +2142,29 @@ mod tests {
         ];
         let config = small_config();
         let pages = layout_section(&blocks, &config, None, Pt::ZERO, Pt::new(14.0), None);
-
         assert!(pages.len() >= 2, "should have at least 2 pages");
-        let heading_y = pages[1]
+        pages[1]
             .commands
             .iter()
             .find_map(|c| match c {
                 DrawCommand::Text { position, text, .. } if &**text == "heading" => {
-                    Some(position.y)
+                    Some(position.y.raw())
                 }
                 _ => None,
             })
-            .expect("heading should be on page 2");
-        // §17.3.1.33: space_before is preserved — pageBreakBefore paragraphs
-        // are not the structural first of the section.
-        assert!(
-            heading_y.raw() > config.margins.top.raw() + 20.0,
-            "space_before should be preserved for pageBreakBefore: y={}",
-            heading_y.raw(),
-        );
+            .expect("heading should be on page 2")
+    }
+
+    #[test]
+    fn space_before_follows_the_mode_after_page_break_before() {
+        // §17.3.1.23 under Word 2013 drops the space at the top of the page it
+        // forces, as every later page top does; an older document keeps it
+        // (`build::block` decides which).
+        let top = small_config().margins.top.raw();
+        let dropped = heading_after_page_break_before(false);
+        assert!(dropped < top + 20.0, "Word 2013 drops it: y={dropped}");
+        let kept = heading_after_page_break_before(true);
+        assert!(kept > top + 20.0, "mode 14 keeps it: y={kept}");
     }
 
     // ── §17.4.58 — floating-table page overflow ────────────────────────
