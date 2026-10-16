@@ -213,3 +213,30 @@ fn a_multiple_adds_the_text_s_share() {
         "the share below it",
     );
 }
+
+/// A break's run counts for nothing on a line that holds anything else: an
+/// Arial line broken by a `<w:br/>` in a 22pt Calibri run is as tall as Arial
+/// makes it, and so is the empty line a closing break leaves, which takes the
+/// paragraph mark's face. Word: B1a → B1b 12.48, Arial's 12.65 and not
+/// Calibri 22's 26.86; B8a → R19 25.68, Arial's descent, an 11pt Arial line
+/// and the reference.
+#[test]
+fn a_break_s_run_counts_only_on_a_line_of_its_own() {
+    let p = pages("line-box-inline.docx");
+    let (above, below) = line_gap(11.0);
+    assert_gap(&p, "R11", "B1a", REF.1 + above, "Arial's reach above");
+    assert_gap(
+        &p,
+        "B1a",
+        "B1b",
+        above + below,
+        "Arial's line, not the break's",
+    );
+    assert_gap(
+        &p,
+        "B8a",
+        "R19",
+        below + (above + below) + REF.0,
+        "the line the break leaves is the mark's",
+    );
+}

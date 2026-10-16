@@ -328,7 +328,10 @@ pub fn fit_lines_with_first(
 ///   above it, so text beside a 40pt picture sits on the picture's foot and the
 ///   line is the picture and the text's descent. A picture alone on its line
 ///   is exactly its own height.
-/// * A tab or a break makes it at least the height it carries.
+/// * A break reaches nothing on a line that holds anything else. Its run's
+///   font, however large, leaves an Arial line as tall as Arial makes it; a
+///   line holding only the break is that font's line
+///   (`test-files/break-clear.docx` case 8).
 #[derive(Clone, Copy, Debug, Default)]
 struct LineMetrics {
     /// The most any fragment reaches above the baseline.
@@ -338,8 +341,10 @@ struct LineMetrics {
     /// The same two for text alone — the base §17.3.1.33 Auto spacing scales.
     text_above: Pt,
     text_below: Pt,
-    /// Fragments that carry only a height (tabs, breaks), counted toward both.
+    /// Fragments that carry only a height (tabs), counted toward both.
     other: Pt,
+    /// A break's own line height, which only a line holding nothing else takes.
+    line_break: Pt,
 }
 
 impl LineMetrics {
@@ -350,6 +355,7 @@ impl LineMetrics {
             }
             Fragment::Emoji { line_metrics, .. } => self.add_text(line_metrics),
             Fragment::Image { size, .. } => self.above = self.above.max(size.height),
+            f if f.is_line_break() => self.line_break = self.line_break.max(f.height()),
             f => self.other = self.other.max(f.height()),
         }
     }
@@ -362,12 +368,25 @@ impl LineMetrics {
         self.text_below = self.text_below.max(m.descent);
     }
 
+    /// The break's height, where nothing visible stands on the line.
+    fn bare_break(&self) -> Pt {
+        if self.above > Pt::ZERO || self.below > Pt::ZERO {
+            Pt::ZERO
+        } else {
+            self.line_break
+        }
+    }
+
     fn height(&self) -> Pt {
-        (self.above + self.below).max(self.other)
+        (self.above + self.below)
+            .max(self.other)
+            .max(self.bare_break())
     }
 
     fn text_height(&self) -> Pt {
-        (self.text_above + self.text_below).max(self.other)
+        (self.text_above + self.text_below)
+            .max(self.other)
+            .max(self.bare_break())
     }
 }
 
