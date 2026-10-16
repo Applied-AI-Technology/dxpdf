@@ -213,10 +213,31 @@ pub(super) fn measure_table_rows(
                         (border_width(b.right) - cell.margins.right).max(Pt::ZERO),
                     )
                 } else {
-                    (
-                        charge(plan.vertical(grid_start, row_idx), cell.margins.left),
-                        charge(plan.vertical(grid_end, row_idx), cell.margins.right),
-                    )
+                    // The right side is not the left side's mirror. Word sizes a
+                    // cell's text from its two margins alone and *starts* it at
+                    // the left charge, so a left border wider than the left
+                    // margin shifts the text right rather than narrowing it,
+                    // and a right border takes no room at all — the text runs
+                    // into it — unless that shift carries the text past the
+                    // right grid line, where it stops at the border's inner
+                    // edge. `test-files/cell-inset-right-{15,14}.docx`,
+                    // measured in Word (Word for Mac 16, 2026-10-16): across 3,
+                    // 6 and 12pt borders on each side and 0, 2, 5.4 and 10pt
+                    // margins, right-aligned text ends a margin from the right
+                    // rule's centre whatever its width, less the left shift
+                    // (5.4 − 6 + 6 = 0.25pt in from a thin rule, by a 12pt left
+                    // border and no left margin), and flush against a shared
+                    // rule it would otherwise cross. Two 12pt cases with
+                    // margins under the border's half stand apart from this and
+                    // from every other reading; the test names them.
+                    let left = charge(plan.vertical(grid_start, row_idx), cell.margins.left);
+                    let right_half = border_width(plan.vertical(grid_end, row_idx)) * 0.5;
+                    let right = if left > cell.margins.right {
+                        right_half - cell.margins.right
+                    } else {
+                        -left
+                    };
+                    (left, right)
                 };
             // The horizontal twin needs no such split, and the asymmetry is
             // worth stating rather than leaving to be rediscovered. §17.4.38
