@@ -262,6 +262,22 @@ fn emit_one_row(
         }
     }
 
+    // §17.4.38: the room a bottom border drawn inside the row takes, which is
+    // the row's and not any one cell's. `measure_table_rows` grew the row by
+    // the widest such border across its cells, and Word aligns every cell's
+    // content above it — a cell whose own bottom is `nil` included. The
+    // corpus's permit cards bottom-align "Signature:" in such a cell beside
+    // one with a 0.5pt bottom rule, on their table's last row, and Word sets
+    // its descent on the rule's top edge, 0.5pt above the row's foot.
+    let row_dy_bottom = if band_below > Pt::ZERO {
+        Pt::ZERO
+    } else {
+        mr.borders
+            .iter()
+            .map(|b| border_width(b.bottom))
+            .fold(Pt::ZERO, Pt::max)
+    };
+
     for (cell_ci, (entry, cell_input)) in mr.entries.iter().zip(row.cells.iter()).enumerate() {
         // §17.4.84: the merged span, used below for vAlign — the same height
         // the shading pass above computed, so a shaded merged cell is
@@ -288,18 +304,9 @@ fn emit_one_row(
         // Border and margin add vertically — `measure_table_rows` says why and
         // charged the same amounts.
         let dy_border = border_width(cell_top);
-        // The foot of the content box, mirroring `dy_border` at the head. A
-        // bottom border only takes room from the content where it is drawn
-        // *inside* the box — `emit_cell_borders` puts it there exactly when no
-        // strip was reserved below — so the branch is on `band_below` and not
-        // on the border alone. `measure_table_rows` reserved the same amount;
-        // subtracting it here is what keeps `Bottom` and `Center` from pushing
-        // content back down into the border that room was made for.
-        let dy_bottom = if band_below > Pt::ZERO {
-            Pt::ZERO
-        } else {
-            border_width(b_bottom)
-        };
+        // The foot of the content box, mirroring `dy_border` at the head: the
+        // row's bottom inset, above.
+        let dy_bottom = row_dy_bottom;
 
         // §17.4.84: for vMerge=Restart cells, vAlign operates over the whole
         // merged span (`effective_h`, computed above with the shading).
