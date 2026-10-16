@@ -137,3 +137,38 @@ fn ligatures_need_open_type_features_enabled() {
         "mode 14 + enableOpenTypeFeatures",
     );
 }
+
+/// A ligature extracts as the text it draws — copied, searched and read aloud
+/// as `fi`, not as nothing. Its glyph has no `cmap` entry, and in
+/// `DxLigaUnnamed.ttf` (`DxLiga` with a format 3 `post` table, as Carlito
+/// ships) no name either, so the only record of its text is the run it was
+/// shaped from: the PDF's `ToUnicode` map must give the ligature `fi`.
+#[test]
+fn a_ligature_extracts_as_the_text_it_draws() {
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let bytes = std::fs::read(format!("{dir}/test-files/ligatures-15.docx")).expect("fixture");
+    let mut doc = dxpdf::docx::parse(&bytes).expect("fixture parses");
+    doc.embedded_fonts.push(EmbeddedFont {
+        family: "Calibri".into(),
+        variant: EmbeddedFontVariant::Regular,
+        data: std::fs::read(format!("{dir}/test-files/fonts/DxLigaUnnamed.ttf")).expect("font"),
+    });
+    let pdf =
+        dxpdf::render::render(doc, &dxpdf::render::RenderOptions::default()).expect("renders");
+    let parsed = lopdf::Document::load_mem(&pdf).expect("a PDF");
+    let maps_fi = parsed.objects.values().any(|object| {
+        let Ok(stream) = object.as_stream() else {
+            return false;
+        };
+        let content = stream
+            .decompressed_content()
+            .unwrap_or_else(|_| stream.content.clone());
+        let text = String::from_utf8_lossy(&content).to_ascii_lowercase();
+        // `f` `i` in UTF-16BE, as the destination of a glyph's mapping.
+        text.contains("begincmap") && text.contains("<00660069>")
+    });
+    assert!(
+        maps_fi,
+        "no ToUnicode entry gives the f_i ligature its text"
+    );
+}

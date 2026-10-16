@@ -331,6 +331,13 @@ def main() -> None:
     # ligature and what follows it. See `build_ligated`.
     write(build_ligated(), "DxLiga.ttf")
 
+    # ── A ligated font with no glyph names ───────────────────────────────
+    #
+    # `DxLiga` with its `post` table cut to format 3, as Carlito ships: the
+    # ligature's name was the only thing that said what text it draws. See
+    # `build_ligated_unnamed`.
+    write(build_ligated_unnamed(), "DxLigaUnnamed.ttf")
+
     print("done — commit the results")
 
 
@@ -604,6 +611,30 @@ languagesystem latn dflt;
 
 feature liga { sub f i by f_i; } liga;
 """
+
+
+def build_ligated_unnamed() -> TTFont:
+    """`DxLiga` with no glyph names — issue: a ligature must still extract as
+    the text it draws.
+
+    A ligature glyph has no `cmap` entry, so a PDF writer that is handed bare
+    glyph ids can recover its text only from its name (`f_i`). Carlito's `post`
+    table is format 3, which carries none, and its ligatures came out of
+    dxpdf's PDFs as nothing at all on a Linux host — `office` copied, searched
+    and read aloud as `of ce`. This fixture has that shape.
+    """
+    font = build_ligated()
+    font["post"].formatType = 3.0
+    for attr in ("extraNames", "mapping"):
+        if hasattr(font["post"], attr):
+            delattr(font["post"], attr)
+    names = font["name"]
+    for record in list(names.names):
+        if record.nameID in (1, 3, 4, 6, 16):
+            text = record.toUnicode()
+            text = text.replace("Dx Liga", "Dx Liga Unnamed").replace("DxLiga", "DxLigaUnnamed")
+            names.setName(text, record.nameID, record.platformID, record.platEncID, record.langID)
+    return font
 
 
 def build_ligated() -> TTFont:

@@ -250,7 +250,7 @@ type ShapedCache = FxHashMap<
 /// measured ([`crate::render::spacing`]).
 ///
 /// Positions come back as absolute offsets from the run origin, which is what
-/// [`Canvas::draw_glyphs_at`] takes — the same convention `render::emoji`'s
+/// [`Canvas::draw_glyphs_utf8`] takes — the same convention `render::emoji`'s
 /// rasterizer relies on, and the reason neither accumulates a pen.
 #[allow(clippy::too_many_arguments)]
 fn draw_shaped(
@@ -310,7 +310,24 @@ fn draw_shaped(
             skia_safe::Point::new(f32::from(g.x) * scale + shift, f32::from(g.y))
         })
         .collect();
-    canvas.draw_glyphs_at(&ids, &*offsets, to_point(position), font, paint);
+    // The text and each glyph's cluster go with the glyphs, so a glyph that
+    // stands for several characters — a ligature, which no `cmap` entry maps
+    // back to text — still extracts as them: Skia's PDF backend gives the
+    // glyph its cluster's text in the font's `ToUnicode` map (an `/ActualText`
+    // span where one map entry cannot say it). Drawn as bare glyphs, the only
+    // other record of a ligature's text is its glyph name, which Carlito's
+    // format 3 `post` table does not carry — its `office` copied, searched and
+    // read aloud as `of ce`.
+    let clusters: Vec<u32> = run.glyphs.iter().map(|g| g.cluster as u32).collect();
+    canvas.draw_glyphs_utf8(
+        &ids,
+        &offsets,
+        &clusters,
+        text,
+        to_point(position),
+        font,
+        paint,
+    );
     true
 }
 
