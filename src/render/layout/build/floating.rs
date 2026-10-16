@@ -1335,6 +1335,9 @@ pub(super) fn build_shape_text_commands(
         list_counters: std::collections::HashMap::new(),
         field_ctx: state.field_ctx,
         shape_default_text_color,
+        // A text box is a story of its own: a table in it is top-level there,
+        // whatever table the box's anchor sits in.
+        table_depth: 0,
         shape_default_font_family,
         // Its own set: this sub-state is built from a `&BuildState`, so the
         // parent's set can't be borrowed mutably here. A border style used
@@ -1688,6 +1691,7 @@ mod tests {
             warned_row_cell_spacing: false,
             warned_orphan_vmerge: false,
             shape_default_text_color: None,
+            table_depth: 0,
             shape_default_font_family: None,
         }
     }

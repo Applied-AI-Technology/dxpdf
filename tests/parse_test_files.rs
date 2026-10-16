@@ -443,6 +443,9 @@ const ALL_FILES: &[&str] = &[
     "break-clear.docx",
     "floating-table-x.docx",
     "row-height-margins.docx",
+    "table-indent-compat-15.docx",
+    "table-indent-compat-14.docx",
+    "table-indent-compat-none.docx",
 ];
 
 #[test]

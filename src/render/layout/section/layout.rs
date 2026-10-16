@@ -2415,9 +2415,12 @@ pub(crate) fn layout_section_with_clearance(
                         ),
                         crate::model::TableAnchor::Page => (Pt::ZERO, config.page_size.width),
                     };
-                    // Measured against `test-files/floating-table-x.docx`:
-                    //  * Word puts the cell *text* on the position, so the
-                    //    edge sits one text inset outside it, and `center`
+                    // Measured against `test-files/floating-table-x.docx` and
+                    // `test-files/table-indent-compat-*.docx`:
+                    //  * In compatibility mode Word puts the cell *text* on the
+                    //    position, so the edge sits one text inset outside it;
+                    //    under Word 2013 the border's outside goes there
+                    //    (`position_inset_left` carries either). `center`
                     //    centres the box.
                     //  * §17.4.28 `w:jc` center/end **wins**: over `tblpX`,
                     //    and over a `tblpXSpec` that says otherwise, placing
@@ -2436,14 +2439,14 @@ pub(crate) fn layout_section_with_clearance(
                         _ => fi.x_align,
                     };
                     let table_x = match x_align {
-                        Some(TableXAlign::Left) => frame_left - fi.text_inset_left,
+                        Some(TableXAlign::Left) => frame_left - fi.position_inset_left,
                         Some(TableXAlign::Center) => {
                             frame_left + (frame_width - table.size.width) * 0.5
                         }
                         Some(TableXAlign::Right) => {
-                            frame_left + frame_width - table.size.width + fi.text_inset_right
+                            frame_left + frame_width - table.size.width + fi.position_inset_right
                         }
-                        _ => frame_left + fi.x_offset - fi.text_inset_left,
+                        _ => frame_left + fi.x_offset - fi.position_inset_left,
                     };
 
                     // §17.4.57: anchor-page heuristic — if the cursor isn't

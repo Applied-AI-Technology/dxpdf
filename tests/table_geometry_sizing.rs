@@ -142,20 +142,18 @@ const ALL_BORDERS: &str = r#"<w:tblBorders>
 
 /// Half the 0.5 pt (`w:sz="4"`) border every table in this file declares.
 ///
-/// A table's box begins this far to the **left** of its indent, and `build_table`
-/// does that deliberately: §17.4.66 straddles the leading edge, so half the
-/// border would otherwise be charged to the first cell and push its text right.
-/// The shift puts the text back on the indent — which is what `w:tblInd`
-/// measures to, per `test-files/border-outer-box.docx`. So a table "at the
-/// margin" has its box at `72.0 - LEADING_HALF` and its first cell's text at 72,
-/// and the assertions below say so rather than rounding it away.
+/// These documents carry no `compatibilityMode`, and in compatibility mode a
+/// table's indent is where its first cell's **text** goes
+/// (`test-files/table-indent-compat-none.docx`, measured): the box begins one
+/// text inset to the left — the left cell margin, or half the leading border
+/// where that is larger. With no cell margin declared, as here, that is this
+/// half border, so a table "at the margin" has its box at `72.0 - LEADING_HALF`
+/// and its first cell's text at 72, and the assertions below say so rather than
+/// rounding it away. A case that declares a margin hangs by the margin instead.
 ///
-/// Two cases below do not add it, and neither is an oversight. The full-width
-/// left-aligned table is already pulled left by `max(cell margin, half the
-/// leading border)`, and a 5.4 pt margin beats a 0.25 pt half outright. The
-/// **centred** table does not carry an indent at all — `w:jc` places the box as
-/// a unit within the width offered — so there is nothing for the shift to apply
-/// to and its box lands on the margin exactly.
+/// The **centred** table does not carry an indent at all — `w:jc` places the
+/// box as a unit within the width offered — so its box lands on the margin
+/// exactly.
 const LEADING_HALF: f32 = 0.25;
 
 /// A one-row two-column table. `tbl_pr` carries whatever the case declares
@@ -199,11 +197,13 @@ fn a_dxa_table_width_scales_the_declared_grid_rather_than_truncating_it() {
         r#"<w:gridCol w:w="2000"/><w:gridCol w:w="6000"/>"#,
     ));
 
+    // The 100-twip left margin is the text inset here, so the box hangs 5 pt
+    // left of the margin (see `LEADING_HALF`).
     let (left, right) = drawn_span(&pages);
     assert!(
-        (left - (72.0 - LEADING_HALF)).abs() < 0.01
-            && (right - (272.0 - LEADING_HALF)).abs() < 0.01,
-        "4000 twips is 200 pt from the 72 pt margin, got {left:.2}..{right:.2}"
+        (left - 67.0).abs() < 0.01 && (right - 267.0).abs() < 0.01,
+        "4000 twips is 200 pt, hung 5 pt left of the 72 pt margin, got \
+         {left:.2}..{right:.2}"
     );
 
     let xs = text_xs(&pages);

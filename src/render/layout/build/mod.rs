@@ -71,6 +71,11 @@ pub struct BuildState {
     /// `wps:style/fontRef`), applied as the base below the run/style cascade.
     /// `None` outside a shape text box.
     pub shape_default_text_color: Option<crate::render::resolve::color::RgbColor>,
+    /// How many tables enclose the block being built in this story: 0 in the
+    /// body, a header or a text box, 1 inside a top-level table's cell. A
+    /// nested table's indent is measured to its outer edge in every
+    /// compatibility mode (`build::table`'s `indent_to_text`).
+    pub table_depth: u32,
     /// §20.1.4.1.17: default font family for the current shape text box (the
     /// theme major/minor collection selected by `fontRef@idx`). `None` outside
     /// a shape text box.
@@ -594,6 +599,7 @@ struct DocumentPosition {
     outline: OutlineCollector,
     field_ctx: crate::render::layout::fragment::FieldContext,
     shape_default_text_color: Option<crate::render::resolve::color::RgbColor>,
+    table_depth: u32,
     shape_default_font_family: Option<String>,
     shape_auto_fit: crate::render::layout::ShapeAutoFit,
 }
@@ -608,6 +614,7 @@ impl DocumentPosition {
             outline,
             field_ctx,
             shape_default_text_color,
+            table_depth,
             shape_default_font_family,
             shape_auto_fit,
             // Warn-once state is deliberately *not* position state — see
@@ -624,6 +631,7 @@ impl DocumentPosition {
             outline: *outline,
             field_ctx: *field_ctx,
             shape_default_text_color: *shape_default_text_color,
+            table_depth: *table_depth,
             shape_default_font_family: shape_default_font_family.clone(),
             shape_auto_fit: *shape_auto_fit,
         }
@@ -637,6 +645,7 @@ impl DocumentPosition {
         state.outline = self.outline;
         state.field_ctx = self.field_ctx;
         state.shape_default_text_color = self.shape_default_text_color;
+        state.table_depth = self.table_depth;
         state.shape_default_font_family = self.shape_default_font_family;
         state.shape_auto_fit = self.shape_auto_fit;
     }

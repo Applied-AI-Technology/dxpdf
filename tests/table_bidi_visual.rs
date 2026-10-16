@@ -658,29 +658,38 @@ fn the_committed_fixture_mirrors_its_own_control() {
     // experiment for it: every cell paragraph in both tables is RTL, so
     // paragraph direction cannot be what moves one and not the other.
     //
-    // The page is 12240 twips wide with 1440-twip margins.
+    // The page is 12240 twips wide with 1440-twip margins. The fixture names no
+    // `compatibilityMode`, so each table's leading cell puts its *text* on its
+    // leading margin and the box hangs one 108-twip cell margin past it
+    // (`test-files/table-indent-compat-none.docx`, measured for the
+    // left-to-right case and reflected for the other).
     const CONTENT_LEFT: f32 = 72.0;
     const CONTENT_RIGHT: f32 = 72.0 + 468.0;
-    assert_eq!(ctrl_left, CONTENT_LEFT, "the control is flush left");
-    assert_eq!(
-        mirror_right, CONTENT_RIGHT,
-        "the w:bidiVisual table is flush right"
+    const CELL_MARGIN: f32 = 5.4;
+    assert!(
+        (ctrl_left - (CONTENT_LEFT - CELL_MARGIN)).abs() < 1e-3,
+        "the control hangs from the left margin, got {ctrl_left}"
     );
-    assert_eq!(
-        mirror_right - mirror_left,
-        ctrl_right - ctrl_left,
+    assert!(
+        (mirror_right - (CONTENT_RIGHT + CELL_MARGIN)).abs() < 1e-3,
+        "the w:bidiVisual table hangs from the right margin, got {mirror_right}"
+    );
+    // Compared to a thousandth of a point: the hang is 5.4pt, which is not
+    // exact in binary, and the two tables reach it from opposite sides.
+    let same = |a: f32, b: f32| (a - b).abs() < 1e-3;
+    assert!(
+        same(mirror_right - mirror_left, ctrl_right - ctrl_left),
         "the two tables are the same width, so only their placement differs"
     );
 
     let mut moved = 0;
     for (colour, ctrl, mirror) in &cells {
-        assert_eq!(mirror.2, ctrl.2, "{colour:?} keeps its width");
-        assert_eq!(
-            mirror.0 - mirror_left,
-            ctrl_right - (ctrl.0 + ctrl.2),
+        assert!(same(mirror.2, ctrl.2), "{colour:?} keeps its width");
+        assert!(
+            same(mirror.0 - mirror_left, ctrl_right - (ctrl.0 + ctrl.2)),
             "{colour:?}: {ctrl:?} must reflect about its own table's edges"
         );
-        if mirror.0 - mirror_left != ctrl.0 - ctrl_left {
+        if !same(mirror.0 - mirror_left, ctrl.0 - ctrl_left) {
             moved += 1;
         }
     }

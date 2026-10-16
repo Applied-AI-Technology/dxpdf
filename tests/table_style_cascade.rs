@@ -51,6 +51,7 @@ fn make_docx(document_xml: &str, styles_xml: &str) -> Vec<u8> {
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
 </Types>"#,
         )
         .unwrap();
@@ -69,7 +70,21 @@ fn make_docx(document_xml: &str, styles_xml: &str) -> Vec<u8> {
             br#"<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>
 </Relationships>"#,
+        )
+        .unwrap();
+
+        // Word 2013's layout, which is what every document Word writes today
+        // asks for: a table's indent is to its outer edge, so the first cell's
+        // text sits at indent + half the leading border + left cell margin and
+        // the cell margin these tests read stays visible in its x. In
+        // compatibility mode the text would sit on the indent whatever the
+        // margin (`test-files/table-indent-compat-*.docx`).
+        zip.start_file("word/settings.xml", o).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
         )
         .unwrap();
 
@@ -807,26 +822,27 @@ fn a_child_table_style_overrides_only_the_properties_it_restates() {
     //
     //     72    margin
     //   + 36    tblInd
-    //   −  1.5  half the parent's 3 pt leading border — `build_table` shifts the
-    //           table left by it so a *collapsed* table's first cell lands on
-    //           the indent (`test-files/border-outer-box.docx`, measured)
+    //   +  1.5  half the parent's 3 pt leading border — under Word 2013 the
+    //           indent is to the table's outer edge, and a *collapsed* table's
+    //           edge straddles its grid line (`table-indent-compat-15.docx`,
+    //           `border-outer-box.docx`, measured)
     //   + 14.4  one cell spacing: §17.4.45's 144 twips is a **half**-gap, so the
     //           gap is twice it (`issue-165-cellspacing-scale.docx`, measured)
     //   +  6    left cell margin
     //   ─────
-    //    126.9
+    //    129.9
     //
     // The 1.5 is a **known inconsistency, not a rule**, and this is the second
     // place it surfaces. A §17.4.45-spaced table takes the shift from
     // `build_table` — which is shared — while `emit_table_outline` still draws
-    // its borders inside the box rather than straddling, so nothing here answers
-    // the shift and the content ends up half a border left of the indent. The
-    // straddle was measured on a collapsed table; no render covers a spaced one.
-    // Recorded rather than corrected, because correcting it means choosing
-    // between two unmeasured readings — see the note in `build_table`.
+    // its borders inside the box rather than straddling, so the shift is
+    // answered by nothing here. The straddle was measured on a collapsed table;
+    // no render covers a spaced one. Recorded rather than corrected, because
+    // correcting it means choosing between two unmeasured readings — see the
+    // note in `build_table`.
     assert_eq!(
         text_xs(&derived).first().copied(),
-        Some(126.90),
+        Some(129.90),
         "the child's own jc wins over the parent's"
     );
     assert!(
@@ -839,13 +855,13 @@ fn a_child_table_style_overrides_only_the_properties_it_restates() {
 
 /// §17.4.50: an explicitly-zero `tblInd` is the same indent as none.
 ///
-/// Not a tautology in this engine: a full-width left-aligned table at zero
-/// indent is shifted left by its left cell margin, so cell content lines up
-/// with body text, and that shift used to be conditioned on *no `tblInd`
-/// element* rather than on the resolved value being zero. Since every built-in
-/// Word table style declares `<w:tblInd w:w="0"/>`, reading the style level
-/// turns the two spellings into different renders unless the condition is
-/// stated on the value — which is what this pins.
+/// Not a tautology in this engine: the placement used to branch on *no
+/// `tblInd` element* rather than on the resolved value being zero, and since
+/// every built-in Word table style declares `<w:tblInd w:w="0"/>`, reading the
+/// style level turns the two spellings into different renders unless the rule
+/// is stated on the value — which is what this pins. These documents ask for
+/// Word 2013's layout, so both put the table's edge on the margin and the
+/// first cell's text one cell margin past it.
 #[test]
 fn a_zero_tbl_ind_indents_exactly_as_an_absent_one() {
     let cell_mar = r#"<w:tblCellMar>
@@ -869,18 +885,17 @@ fn a_zero_tbl_ind_indents_exactly_as_an_absent_one() {
     );
     assert_eq!(
         text_xs(&absent).first().copied(),
-        Some(72.0),
-        "and both must be the shifted placement, which puts the first cell's \
-         text on the left margin rather than one cell margin past it"
+        Some(77.4),
+        "and both must put the table's edge on the margin: 72 + 5.4"
     );
 }
 
 /// The same rule at the **direct** level, which the guard also changed and no
-/// test reached: `<w:tblInd w:w="0"/>` written on the `<w:tbl>` used to mean
-/// "an indent element is present, so do not shift" and now means "the resolved
-/// indent is zero, so shift" — the rule the comment at the site states, applied
-/// where the style-level test cannot see it. Word cannot tell a declared zero
-/// from an undeclared one either.
+/// test reached: `<w:tblInd w:w="0"/>` written on the `<w:tbl>` once meant "an
+/// indent element is present" and now means "the resolved indent is zero" —
+/// the rule the comment at the site states, applied where the style-level test
+/// cannot see it. Word cannot tell a declared zero from an undeclared one
+/// either.
 ///
 /// No corpus table has this shape (a full-width left-aligned table with a
 /// direct zero `tblInd`), so nothing pinned it; the style level is the only
@@ -909,8 +924,8 @@ fn a_direct_zero_tbl_ind_indents_exactly_as_an_absent_one() {
     );
     assert_eq!(
         text_xs(&absent).first().copied(),
-        Some(72.0),
-        "and both must be the shifted placement"
+        Some(77.4),
+        "and both must be the zero-indent placement"
     );
 
     // The discriminator: a *non-zero* direct `tblInd` is still taken literally,

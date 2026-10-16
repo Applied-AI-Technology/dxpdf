@@ -82,18 +82,20 @@ pub struct TableFloatInfo {
     /// §17.4.57 `horzAnchor`: the frame `x_offset` and `x_align` are measured
     /// in — the text column, the page margins, or the paper edge.
     pub horz_anchor: crate::model::TableAnchor,
-    /// §17.4.57 `tblpX`: offset from `horz_anchor`'s left edge to the first
-    /// cell's **text**, not to the table's edge (see `text_inset_left`).
+    /// §17.4.57 `tblpX`: offset from `horz_anchor`'s left edge to the point
+    /// `position_inset_left` names.
     pub x_offset: Pt,
-    /// How far the first cell's text sits inside the table's left edge — its
-    /// cell margin, or half the leading border where that is larger. Word puts
-    /// the *text* on a floating table's position (`tblpX`, `tblpXSpec="left"`),
-    /// so the table's edge lands this far outside it, as `w:tblInd` does for a
-    /// table in the flow (`test-files/floating-table-x.docx`).
-    pub text_inset_left: Pt,
-    /// The same inset at the right edge, for `tblpXSpec="right"`, which puts
-    /// the last cell's text edge on the frame's right edge.
-    pub text_inset_right: Pt,
+    /// How far inside the table's left grid line the point a floating table's
+    /// position (`tblpX`, `tblpXSpec="left"`) measures to lies. In
+    /// compatibility mode that is the first cell's **text** — its cell margin,
+    /// or half the leading border where that is larger — so the table's edge
+    /// lands that far outside the position; under Word 2013 it is the outside
+    /// of the leading border, half a border *outside* the grid line, so this is
+    /// negative. Both as `w:tblInd` measures for a table in the flow
+    /// (`test-files/floating-table-x.docx`, `test-files/table-indent-compat-15.docx`).
+    pub position_inset_left: Pt,
+    /// The same at the right edge, for `tblpXSpec="right"`.
+    pub position_inset_right: Pt,
     /// §17.4.58: absolute Y offset from the vertical anchor.
     pub y_offset: Pt,
     /// §17.4.58: vertical anchor reference (text / margin / page).

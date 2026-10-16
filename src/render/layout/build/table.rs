@@ -651,32 +651,74 @@ pub(super) fn build_table(
         }
     });
 
+    // §17.4.38: resolve table borders — merge direct properties over table style.
+    // Direct tblBorders may specify only a subset of edges (e.g. insideH=none);
+    // unspecified edges inherit from the table style. Computed up front so
+    // per-row tblPrEx merges (§17.4.60) below have a stable basis.
+    let style_borders = style_table.and_then(|tp| tp.borders.get());
+    let tbl_borders = match (t.properties.borders.get(), style_borders) {
+        (Some(direct), Some(style)) => Some(merge_table_borders(direct, style)),
+        (Some(direct), None) => Some(*direct),
+        (None, Some(style)) => Some(*style),
+        (None, None) => None,
+    };
+    let border_config = tbl_borders
+        .as_ref()
+        .map(|b| convert_table_border_config(b, state));
+
+    // Half of each outer vertical border: a collapsed table's own edges straddle
+    // their grid lines (`border-outer-box.docx`), so this much of each lies
+    // outside the grid. Read before `mirror_columns`, which is fine for the
+    // width — it wants the sum — and the indent below reads its own after.
+    let half_border = |side: Option<&crate::render::layout::table::TableBorderLine>| {
+        side.map(|l| crate::render::layout::table::borders::drawn_width(l) * 0.5)
+            .unwrap_or(Pt::ZERO)
+    };
+    let outer_half_borders = border_config
+        .as_ref()
+        .map(|b| half_border(b.left.as_ref()) + half_border(b.right.as_ref()))
+        .unwrap_or(Pt::ZERO);
+
+    // §17.4.50 / §17.4.57: what a table's position is measured *to*, which
+    // depends on which Word the document asks for. Measured against
+    // `test-files/table-indent-compat-*.docx`, the same tables under
+    // `compatibilityMode` 15, 14 and absent:
+    //
+    // * In compatibility mode (14, 12, absent), a top-level table's indent —
+    //   `w:tblInd`, zero when absent, or a floating table's `tblpX` — is where
+    //   its first cell's **text** goes: the table hangs one text inset (cell
+    //   margin, or half the leading border where that is larger) left of it,
+    //   full-width or not, and a 100% table is wider than the text column by
+    //   both insets.
+    // * Under Word 2013 (mode 15 and later), and for a **nested** table in any
+    //   mode, the indent is where the table's outer edge goes — the outside of
+    //   its leading border — and a 100% table's outer edges are the column's.
+    //
+    // `jc` center and end place the table as a box and move by neither rule.
+    let indent_to_text = !ctx.resolved.compat.is_word_2013() && state.table_depth == 0;
+    let start_aligned = !matches!(
+        alignment,
+        Some(model::Alignment::Center) | Some(model::Alignment::End)
+    );
+
     // §17.4.63: resolve table width from tblW.
     let is_auto_width = matches!(
         width,
         None | Some(model::TableMeasure::Auto) | Some(model::TableMeasure::Nil)
     );
-    let cell_margins_h = default_cell_margins
-        .map(|m| Pt::from(m.left) + Pt::from(m.right))
-        .unwrap_or(Pt::ZERO);
-    // §17.4.63 / Word heuristic: a full-width left-aligned table extends
-    // beyond the body content area by its cell margins so cell content
-    // aligns with surrounding paragraph text. Centered/right-aligned tables
-    // are positioned as a unit — extending them would just shift them out
-    // by half the margins, producing a width discrepancy when consecutive
-    // centered tables have different cell margins (cf. the stacked
-    // "Anhang: Sauberkeit" tables in the Volvo Annahme-Protokoll).
-    //
-    // "Left-aligned" here means *start*-aligned, which is why the test is
-    // written as "neither centre nor end" and needs no direction of its own: the
-    // shift is carried as a negative `indent`, and `table_x_offset` applies an
-    // indent at whichever margin leads. A full-width right-to-left table
-    // therefore extends to the right, putting its leading cell's content back on
-    // the right margin — the same alignment, reflected.
-    let extends_for_alignment = !matches!(
-        alignment,
-        Some(model::Alignment::Center) | Some(model::Alignment::End)
-    );
+    // The first and last cells' text insets: cell margin, or half the outer
+    // border where that is larger (`measure_table_rows`' charge).
+    let (text_inset_left, text_inset_right) = {
+        let margins = default_cell_margins.unwrap_or(crate::model::geometry::EdgeInsets::ZERO);
+        let (left, right) = border_config
+            .as_ref()
+            .map(|b| (half_border(b.left.as_ref()), half_border(b.right.as_ref())))
+            .unwrap_or((Pt::ZERO, Pt::ZERO));
+        (
+            Pt::from(margins.left).max(left),
+            Pt::from(margins.right).max(right),
+        )
+    };
     let target_width = match width {
         Some(model::TableMeasure::Pct(pct)) => {
             // §17.4.63 / §17.18.90: the `pct` scale is fiftieths of a percent,
@@ -706,9 +748,22 @@ pub(super) fn build_table(
             // move it toward. **Word reference render needed**: a nested table
             // at `w:tblW w:type="pct" w:w="5000"` inside a half-width cell
             // separates the two readings in one measurement.
+            //
+            // # A full-width table and the column's edges
+            //
+            // Which of the two placements above decides how wide 100% is: one
+            // text inset past the column on each side when the indent is to the
+            // text, so the outer cells' text lines up with the paragraphs around
+            // the table, and exactly the column — outer border to outer border —
+            // when it is to the edge. A centred or end-aligned table is placed as
+            // a box and takes the column as it is.
             let ratio = pct.to_fraction();
-            let base = if *pct >= Dimension::FULL && extends_for_alignment {
-                available_width + cell_margins_h
+            let base = if *pct >= Dimension::FULL && start_aligned {
+                if indent_to_text {
+                    available_width + text_inset_left + text_inset_right
+                } else {
+                    available_width - outer_half_borders
+                }
             } else {
                 available_width
             };
@@ -768,22 +823,10 @@ pub(super) fn build_table(
         .unwrap_or(&[]);
     let num_rows = t.rows.len();
 
-    // §17.4.38: resolve table borders — merge direct properties over table style.
-    // Direct tblBorders may specify only a subset of edges (e.g. insideH=none);
-    // unspecified edges inherit from the table style. Computed up front so
-    // per-row tblPrEx merges (§17.4.60) below have a stable basis.
-    let style_borders = style_table.and_then(|tp| tp.borders.get());
-    let tbl_borders = match (t.properties.borders.get(), style_borders) {
-        (Some(direct), Some(style)) => Some(merge_table_borders(direct, style)),
-        (Some(direct), None) => Some(*direct),
-        (None, Some(style)) => Some(*style),
-        (None, None) => None,
-    };
-    let border_config = tbl_borders
-        .as_ref()
-        .map(|b| convert_table_border_config(b, state));
-
     // Build rows by iterating cells and recursing into their content.
+    // A table built inside one of this table's cells is nested, which changes
+    // what its indent measures to (`indent_to_text`).
+    state.table_depth += 1;
     let rows: Vec<TableRowInput> = t
         .rows
         .iter()
@@ -935,6 +978,7 @@ pub(super) fn build_table(
             }
         })
         .collect();
+    state.table_depth -= 1;
 
     // §17.4.84: an unpaired `w:vMerge w:val="continue"` is malformed input, and
     // is repaired here — once, over the finished rows — so that measure, emit,
@@ -986,49 +1030,25 @@ pub(super) fn build_table(
         mirror_columns(&mut rows, &mut col_widths, &mut border_config);
     }
 
-    // §17.4.50: table indentation from left margin.
-    // For full-width left-aligned tables, MS Word shifts the table left
-    // by the default cell margin so cell content aligns with paragraph text.
-    let is_full_width = matches!(
-        width,
-        Some(model::TableMeasure::Pct(pct)) if *pct >= Dimension::FULL
-    );
-    let is_left_aligned = !matches!(
-        alignment,
-        Some(model::Alignment::Center) | Some(model::Alignment::End)
-    );
-    // The shift is keyed on the *resolved* indent being zero, not on the
-    // absence of a `tblInd` element. Those were the same question only while
-    // the style level was unread: every built-in Word table style declares
-    // `<w:tblInd w:w="0" w:type="dxa"/>`, so reading the style would otherwise
-    // suppress the shift on essentially every Word document — silently undoing
-    // the corpus tuning the shift exists for, without anything having decided
-    // to. An explicitly-zero indent and an absent one are the same indent, and
-    // Word cannot tell them apart either.
+    // §17.4.50: table indentation from the leading margin, to the first cell's
+    // text or to the table's outer edge as `indent_to_text` says (see there for
+    // the measurement). Either way `indent` is where the **grid** starts, which
+    // is what `table_x_offset` places.
     //
-    // A *non-zero* indent is still taken literally. Whether Word measures
-    // `tblInd` to the table's border box or to the first cell's text edge — the
-    // reading under which the shift is not a special case at all but the same
-    // rule at zero — is not settled here; a **Word reference render** of a
-    // full-width left-aligned table at a non-zero `tblInd` would settle it.
+    // An explicitly-zero `tblInd` and an absent one are the same indent — every
+    // built-in Word table style declares `<w:tblInd w:w="0" w:type="dxa"/>` —
+    // and Word cannot tell them apart either.
     //
     // # The leading border's half
     //
     // §17.4.66 straddles a table's own left edge on its first grid line, so half
     // of that border falls to the left of the grid and half is charged to the
-    // first cell's content (`table::borders`, `measure_table_rows`). Word puts
-    // that cell's **text** at the indent, not the grid line: measured against
-    // `test-files/border-outer-box.docx`, whose two tables differ only in outer
-    // border weight — the 12pt one draws its frame at 60..72 against a 300pt
-    // grid and carries its *interior* line 6pt left with it, which straddling
-    // alone cannot do. So the grid starts half a leading border to the left of
-    // the indent, and the charged half puts the text back on it.
-    //
-    // Which is the same rule as the cell-margin shift above, one level up: both
-    // are the first cell's content inset, and the content is inset by whichever
-    // of the two is larger. They are combined only where that shift applies,
-    // though — the corpus tuning it was drawn from is untouched by this
-    // measurement, whose fixture declares no cell margins at all.
+    // first cell's content (`table::borders`, `measure_table_rows`). Measured
+    // against `test-files/border-outer-box.docx` (no `compatibilityMode`), whose
+    // two tables differ only in outer border weight: Word keeps the text on the
+    // indent and moves the 12pt table's frame — interior line included — 6pt
+    // left. Under Word 2013 the same table keeps its frame's outside on the
+    // indent instead, and the text moves right by the whole border.
     //
     // # Only a *table-level* border shifts the table, and that is unmeasured
     //
@@ -1073,14 +1093,20 @@ pub(super) fn build_table(
             // places the corpus's anchor-less tables on the column's edge.
             horz_anchor: pos.horz_anchor.unwrap_or(crate::model::TableAnchor::Text),
             x_offset: pos.x.map(Pt::from).unwrap_or(Pt::ZERO),
-            text_inset_left: default_cell_margins
-                .map(|m| Pt::from(m.left))
-                .unwrap_or(Pt::ZERO)
-                .max(leading_border),
-            text_inset_right: default_cell_margins
-                .map(|m| Pt::from(m.right))
-                .unwrap_or(Pt::ZERO)
-                .max(trailing_border),
+            // `tblpX` and `tblpXSpec` left/right are indents like `w:tblInd`,
+            // measured to whichever point `indent_to_text` names — and under
+            // Word 2013 that is the border's outside, half a border *outside*
+            // the grid line, hence the negative inset.
+            position_inset_left: if indent_to_text {
+                text_inset_left
+            } else {
+                -leading_border
+            },
+            position_inset_right: if indent_to_text {
+                text_inset_right
+            } else {
+                -trailing_border
+            },
             // §17.4.57: tblpY — absolute Y offset from the vertical anchor.
             y_offset: pos.y.map(Pt::from).unwrap_or(Pt::ZERO),
             // §17.4.57: default vertical anchor is "text".
@@ -1091,13 +1117,16 @@ pub(super) fn build_table(
         }
     });
 
-    let indent = match table_indent {
-        Some(model::TableMeasure::Twips(tw)) if tw.raw() != 0 => Pt::from(*tw) - leading_border,
-        _ if is_full_width && is_left_aligned => -default_cell_margins
-            .map(|m| Pt::from(m.left))
-            .unwrap_or(Pt::ZERO)
-            .max(leading_border),
-        _ => -leading_border,
+    let declared_indent = match table_indent {
+        Some(model::TableMeasure::Twips(tw)) => Pt::from(*tw),
+        _ => Pt::ZERO,
+    };
+    let indent = if !start_aligned {
+        -leading_border
+    } else if indent_to_text {
+        declared_indent - text_inset_left.max(leading_border)
+    } else {
+        declared_indent + leading_border
     };
 
     BuiltTable {
@@ -2393,9 +2422,9 @@ mod tests {
     /// offered, so the table is 4999/5000 × 468 = 467.906 pt. At full the base
     /// is 468 plus both of the table's cell margins, 2 × 108 twips = 10.8 pt,
     /// for 478.8. Two widths one unit apart in the file come out 10.9 pt apart
-    /// on the page, and that discontinuity *is* the heuristic — see
-    /// `extends_for_alignment`'s comment for why a full-width table is the one
-    /// case Word widens.
+    /// on the page, and that discontinuity is Word's — see the
+    /// `target_width` comment in `build_table` for why a full-width table is
+    /// the one case it widens, and only in compatibility mode.
     ///
     /// `tests/table_geometry_sizing.rs` pins each side of this on the page, but
     /// only ever with cell margins **or** a sub-full percentage, never both:
@@ -2482,10 +2511,11 @@ mod tests {
         assert_pt(indent_of(Some(dxa(720))), 36.0, "the direct 720 twips wins");
     }
 
-    /// §17.4.50 / §17.4.63: the full-width left-aligned shift is keyed on the
-    /// **resolved indent being zero**, not on the `tblInd` element being
-    /// absent — and "resolves to zero" covers every measure this engine does
-    /// not read, not only `dxa 0`.
+    /// §17.4.50: the indent is keyed on the **resolved** value, not on the
+    /// `tblInd` element being present — and "resolves to zero" covers every
+    /// measure this engine does not read, not only `dxa 0`. These tables carry
+    /// no `compatibilityMode`, so the indent is to the first cell's text and the
+    /// grid hangs one cell margin left of it.
     ///
     /// `tblInd` is a `CT_TblWidth`, so a file may state `pct`, `auto` or `nil`
     /// there. Only `dxa` is read, which is the same reading
@@ -2496,9 +2526,9 @@ mod tests {
     /// it and against what.
     ///
     /// What this pins regardless of that answer is the *rule*. Five spellings
-    /// that resolve to no indent must all take the shift, so a guard rewritten
-    /// as "the element is absent" fails on four of them; and the shift is
-    /// −5.4 pt, one left cell margin, not some other multiple.
+    /// that resolve to no indent must all hang the same −5.4 pt, one left cell
+    /// margin, so a reading keyed on "the element is absent" fails on four of
+    /// them.
     /// `tests/table_style_cascade.rs` covers the two spellings the corpus has —
     /// absent, and `dxa 0` — on the page.
     #[test]
@@ -2524,8 +2554,8 @@ mod tests {
         }
         assert_pt(
             indent_of(Some(dxa(720))),
-            36.0,
-            "…while a real indent is still taken literally",
+            30.6,
+            "…while a real indent moves it: the text at 36, the grid 5.4 left",
         );
     }
 
