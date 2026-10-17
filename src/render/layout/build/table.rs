@@ -1292,8 +1292,16 @@ pub(super) fn build_table(
         Some(model::TableMeasure::Twips(tw)) => Pt::from(*tw),
         _ => Pt::ZERO,
     };
+    // An indent that nothing states is not an indent of 0. Every Normal Table
+    // states one (`parse::styles::complete_normal_table`), so a table only
+    // lacks it in a file with no default table style — and Word stands such a
+    // table's grid on the margin, its text one cell margin in, where a stated
+    // 0 would hang the grid outside it (`test-files/table-normal-none.docx`,
+    // modes 14 and absent; a stated `tblInd` there is still to the text).
     let indent = if !start_aligned {
         -leading_border
+    } else if indent_to_text && table_indent.is_none() {
+        Pt::ZERO
     } else if indent_to_text {
         declared_indent - text_inset_left.max(leading_border)
     } else {
@@ -2940,10 +2948,12 @@ mod tests {
     /// table at `<w:tblInd w:w="2500" w:type="pct"/>` says whether Word reads
     /// it and against what.
     ///
-    /// What this pins regardless of that answer is the *rule*. Five spellings
+    /// What this pins regardless of that answer is the *rule*. Four spellings
     /// that resolve to no indent must all hang the same −5.4 pt, one left cell
-    /// margin, so a reading keyed on "the element is absent" fails on four of
-    /// them.
+    /// margin. The fifth, no `tblInd` at all, is a different case: no table
+    /// style states one either here, which in Word only a file without a
+    /// `TableNormal` does, and Word stands that table's grid on the margin
+    /// (`tests/table_normal.rs`).
     /// `tests/table_style_cascade.rs` covers the two spellings the corpus has —
     /// absent, and `dxa 0` — on the page.
     #[test]
@@ -2958,8 +2968,12 @@ mod tests {
             build(&table_of(props, &[2000, 2000], 2)).indent
         };
 
+        assert_pt(
+            indent_of(None),
+            0.0,
+            "no indent stated anywhere: the grid on the margin",
+        );
         for ind in [
-            None,
             Some(model::TableMeasure::Auto),
             Some(model::TableMeasure::Nil),
             Some(pct(2500)),
@@ -2990,6 +3004,9 @@ mod tests {
             let props = model::TableProperties {
                 width: measure(pct(5000)),
                 alignment: model::Dup::from(jc),
+                // Stated, as Normal Table states it: an indent nothing states
+                // stands the grid on the margin instead.
+                indent: model::Dup::from(Some(dxa(0))),
                 cell_margins: model::Dup::from(Some(cell_mar(0, 108, 0, 108))),
                 ..Default::default()
             };

@@ -147,15 +147,14 @@ fn a_flipped_rows_cells_run_right_to_left_at_their_own_widths() {
 /// (`tests/table_leading_margin.rs`), as if this one row were a mini
 /// right-to-left table of its own.
 ///
-/// The page is the fixture's own (Letter, 1in margins), so content nominally
-/// runs 72..540pt — but the control's own right edge lands at 371.5, half a
-/// point short of the nominal 72 + 300 = 372, because a table's own outer
-/// border straddles the grid line it stands on and shifts the whole table half
-/// a leading border left (`border-outer-box.docx`, `tests/table_outer_box.rs`).
-/// The flipped row picks up the same half-point, landing at 539.5 rather than
-/// a clean 540 — asserted against the control's own shift rather than a bare
-/// literal, so the claim is "reaches the content edge this table actually
-/// has", not a number this border geometry happens to produce today.
+/// The page is the fixture's own (Letter, 1in margins), so content runs
+/// 72..540pt. The fixture names no `compatibilityMode`, states no `tblInd` and
+/// has no `TableNormal`, so the table's grid stands on the margin
+/// (`test-files/table-normal-none.docx`) and the control's own right edge is
+/// 72 + 300 = 372; the flipped row's, the content edge, 540. The two are
+/// asserted with the same shift from those, so the claim is "reaches the
+/// content edge this table actually has", not a number this border geometry
+/// happens to produce today.
 #[test]
 fn a_flipped_row_reaches_the_pages_content_width_not_the_tables_own() {
     let bands = rows_by_band(&layout());
@@ -167,13 +166,13 @@ fn a_flipped_row_reaches_the_pages_content_width_not_the_tables_own() {
         let (x, _, w, _) = bands[2][&A];
         x + w
     };
+    let shift = control_right - 372.0;
     assert!(
-        (control_right - 371.5).abs() < 0.1,
-        "control table's own right edge should be at 72 + 300, shifted half a \
-         leading border left, got {control_right}"
+        shift.abs() < 0.1,
+        "control table's own right edge should be at 72 + 300, got {control_right}"
     );
     let page_right_margin = 612.0 - 72.0; // Letter, 1in margins: content ends here.
-    let expected_flipped_right = page_right_margin - 0.5; // same half-point shift.
+    let expected_flipped_right = page_right_margin + shift;
     assert!(
         (flipped_right - expected_flipped_right).abs() < 0.1,
         "flipped row's right edge should reach the page's content width \

@@ -659,20 +659,19 @@ fn the_committed_fixture_mirrors_its_own_control() {
     // paragraph direction cannot be what moves one and not the other.
     //
     // The page is 12240 twips wide with 1440-twip margins. The fixture names no
-    // `compatibilityMode`, so each table's leading cell puts its *text* on its
-    // leading margin and the box hangs one 108-twip cell margin past it
-    // (`test-files/table-indent-compat-none.docx`, measured for the
-    // left-to-right case and reflected for the other).
+    // `compatibilityMode`, states no `tblInd` and has no `TableNormal`, so each
+    // table's grid stands on its leading margin, its text one cell margin in
+    // (`test-files/table-normal-none.docx`, measured for the left-to-right case
+    // and reflected for the other).
     const CONTENT_LEFT: f32 = 72.0;
     const CONTENT_RIGHT: f32 = 72.0 + 468.0;
-    const CELL_MARGIN: f32 = 5.4;
     assert!(
-        (ctrl_left - (CONTENT_LEFT - CELL_MARGIN)).abs() < 1e-3,
-        "the control hangs from the left margin, got {ctrl_left}"
+        (ctrl_left - CONTENT_LEFT).abs() < 1e-3,
+        "the control stands on the left margin, got {ctrl_left}"
     );
     assert!(
-        (mirror_right - (CONTENT_RIGHT + CELL_MARGIN)).abs() < 1e-3,
-        "the w:bidiVisual table hangs from the right margin, got {mirror_right}"
+        (mirror_right - CONTENT_RIGHT).abs() < 1e-3,
+        "the w:bidiVisual table stands on the right margin, got {mirror_right}"
     );
     // Compared to a thousandth of a point: the hang is 5.4pt, which is not
     // exact in binary, and the two tables reach it from opposite sides.

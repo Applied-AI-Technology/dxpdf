@@ -233,6 +233,13 @@ impl From<StylesXml> for StyleSheet {
                 sheet.styles.insert(id, style);
             }
         }
+        if let Some(normal) = sheet
+            .styles
+            .values_mut()
+            .find(|s| s.is_default && s.style_type == StyleType::Table)
+        {
+            complete_normal_table(normal);
+        }
 
         sheet.latent_styles = Dup::from(x.latent_styles).into_value().map(Into::into);
         sheet
@@ -261,6 +268,48 @@ fn absent_paragraph_defaults() -> ParagraphProperties {
             ..ParagraphSpacing::default()
         })),
         ..ParagraphProperties::default()
+    }
+}
+
+/// Complete the default table style — Word's Normal Table, `TableNormal` —
+/// from Word's built-in definition of it: an indent of 0 and 108-twip left
+/// and right cell margins, 0 top and bottom, wherever the file's own leaves
+/// one out. §17.7.4.17 makes the default table style the one a table naming
+/// none takes, and leaves its content to the file.
+///
+/// Measured (`test-files/table-normal-*.docx`): a `TableNormal` stating only
+/// a `tblInd` still gives its tables 108-twip margins, and one stating only
+/// margins still places them in compatibility mode as an indent of 0 does. A
+/// file with no default table style has none to complete, and Word gives its
+/// tables neither: no margins but their own, and no indent — which places
+/// them differently again (`build::table`'s `declared_indent`).
+///
+/// Only whole absences were measured; a `tblCellMar` stating some sides is
+/// completed side by side, as `build::table` merges a table's own margins
+/// over its style's.
+fn complete_normal_table(style: &mut Style) {
+    let table = style
+        .table_properties
+        .get_or_insert_with(TableProperties::default);
+    if table.indent.get().is_none() {
+        table.indent = Dup::from(Some(TableMeasure::Twips(Dimension::new(0))));
+    }
+    let (vertical, side) = (Dimension::new(0), Dimension::new(108));
+    match table.cell_margins.get_mut() {
+        Some(own) => {
+            own.top.get_or_insert(vertical);
+            own.right.get_or_insert(side);
+            own.bottom.get_or_insert(vertical);
+            own.left.get_or_insert(side);
+        }
+        None => {
+            table.cell_margins = Dup::from(Some(crate::model::geometry::PartialEdgeInsets::new(
+                Some(vertical),
+                Some(side),
+                Some(vertical),
+                Some(side),
+            )));
+        }
     }
 }
 

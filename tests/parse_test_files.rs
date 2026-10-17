@@ -467,6 +467,11 @@ const ALL_FILES: &[&str] = &[
     "autofit-columns.docx",
     "line-default.docx",
     "line-grid.docx",
+    "table-normal-none.docx",
+    "table-normal-full.docx",
+    "table-normal-mar.docx",
+    "table-normal-ind.docx",
+    "table-normal-none-14.docx",
 ];
 
 #[test]

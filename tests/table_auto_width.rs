@@ -46,6 +46,8 @@ fn make_docx(document_xml: &str) -> Vec<u8> {
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/word/document.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>"#,
     )
     .unwrap();
@@ -58,6 +60,39 @@ fn make_docx(document_xml: &str) -> Vec<u8> {
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
     Target="word/document.xml"/>
 </Relationships>"#,
+    )
+    .unwrap();
+
+    zip.start_file("word/_rels/document.xml.rels", o).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdS"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+    Target="styles.xml"/>
+</Relationships>"#,
+    )
+    .unwrap();
+
+    // A `TableNormal` stating an indent of 0 and no cell margins, so these
+    // tables are placed by the compatibility-mode rule — the indent to the
+    // first cell's text — with nothing but their own margins. Without one
+    // Word stands a table stating no indent on the margin instead
+    // (`tests/table_normal.rs`).
+    zip.start_file("word/styles.xml", o).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="table" w:default="1" w:styleId="TableNormal">
+    <w:tblPr>
+      <w:tblInd w:w="0" w:type="dxa"/>
+      <w:tblCellMar>
+        <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+        <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+      </w:tblCellMar>
+    </w:tblPr>
+  </w:style>
+</w:styles>"#,
     )
     .unwrap();
 
