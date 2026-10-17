@@ -661,6 +661,7 @@ pub(super) fn emit_line_commands(
         let LineBox {
             height: line_height,
             baseline,
+            ..
         } = line_box(
             line,
             default_line_height,
@@ -1839,6 +1840,12 @@ pub(super) fn emit_tab_leader(
 pub(super) struct LineBox {
     pub(super) height: Pt,
     pub(super) baseline: Pt,
+    /// How much of `height` may hang past a page's bottom margin: an Auto
+    /// multiple's extra, which is all below the text. Word keeps a line on
+    /// the page when its text clears the margin, at 1.15, 1.5 and double
+    /// alike, and moves an `exact` or `atLeast` line whose box does not
+    /// (`test-files/page-bottom-spacing.docx`).
+    pub(super) hang: Pt,
 }
 
 /// The [`LineBox`] of `line`, falling back to `default_line_height` — the
@@ -1883,7 +1890,15 @@ pub(super) fn line_box(
         LineSpacingRule::Exact(_) => height * EXACT_BASELINE,
         LineSpacingRule::AtLeast(_) => (height - natural).max(Pt::ZERO) + line.ascent,
     };
-    LineBox { height, baseline }
+    let hang = match rule {
+        LineSpacingRule::Auto(_) => (height - natural).max(Pt::ZERO),
+        LineSpacingRule::Exact(_) | LineSpacingRule::AtLeast(_) => Pt::ZERO,
+    };
+    LineBox {
+        height,
+        baseline,
+        hang,
+    }
 }
 
 /// How far down an `exact` line its baseline sits, as a share of the line —

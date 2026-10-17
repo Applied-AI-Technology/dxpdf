@@ -158,6 +158,9 @@ pub(crate) struct PlacedParagraph<'a> {
     /// §17.3.1.33: resolved height of each fitted line, in line order. Lets the
     /// stacker choose split points without re-measuring.
     line_heights: Vec<Pt>,
+    /// How much of each line's height may hang past a page's bottom margin
+    /// (`line_emit::LineBox::hang`).
+    line_hangs: Vec<Pt>,
 }
 
 /// Fit and measure a paragraph's lines without emitting draw commands — the
@@ -270,19 +273,18 @@ pub(crate) fn place_paragraph<'a>(
     };
 
     // §17.3.1.33: resolve each line's height once, matching `emit_line_commands`.
-    let line_heights = line_placements
+    let (line_heights, line_hangs) = line_placements
         .iter()
         .map(|lp| {
-            line_box(
+            let b = line_box(
                 &lp.line,
                 default_line_height,
                 &style.line_spacing,
                 style.auto_fit,
-            )
-            .height
-                + lp.clear_after
+            );
+            (b.height + lp.clear_after, b.hang)
         })
-        .collect();
+        .unzip();
 
     PlacedParagraph {
         fragments: effective,
@@ -294,6 +296,7 @@ pub(crate) fn place_paragraph<'a>(
         measure_text,
         drop_cap_baseline_y,
         line_heights,
+        line_hangs,
     }
 }
 
@@ -306,6 +309,12 @@ impl PlacedParagraph<'_> {
     /// §17.3.1.33: resolved height of line `i`.
     pub(crate) fn line_height(&self, i: usize) -> Pt {
         self.line_heights[i]
+    }
+
+    /// How much of line `i`'s height may hang past a page's bottom margin —
+    /// what a page-fit test does not charge for it when it ends the page.
+    pub(crate) fn line_hang(&self, i: usize) -> Pt {
+        self.line_hangs[i]
     }
 
     /// Number of leading lines that must stay together on the first segment

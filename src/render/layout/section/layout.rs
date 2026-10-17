@@ -1246,9 +1246,14 @@ enum ParagraphSplit {
 ///
 /// * `space_before` — once, ahead of the first line, and only when this is the
 ///   paragraph's first segment (§17.3.1.33).
-/// * each line's own height.
+/// * each line's own height, less what of it may hang past the page bottom
+///   (`line_hang`) when it is the line that ends the page — an Auto
+///   multiple's extra, below the text, which Word lets hang past the margin
+///   (`test-files/page-bottom-spacing.docx`). Every line before it is charged
+///   in full, since the next line stands below its extra.
 /// * `trailing_extra` — once, with the **last** line, and only if this
-///   placement carries it.
+///   placement carries it. A bottom border stands below the last line's
+///   extra, so that line is charged in full beside it.
 ///
 /// What is deliberately *not* charged is the paragraph's `space_after`; see
 /// the call site for why (issue #126). `trailing_extra` today is the bottom
@@ -1256,6 +1261,7 @@ enum ParagraphSplit {
 fn lines_that_fit(
     total: usize,
     line_height: impl Fn(usize) -> Pt,
+    line_hang: impl Fn(usize) -> Pt,
     space_before: Pt,
     trailing_extra: Pt,
     avail: Pt,
@@ -1264,8 +1270,10 @@ fn lines_that_fit(
     let mut n_fit = 0;
     for i in 0..total {
         let mut needed = used + line_height(i);
-        if i + 1 == total {
+        if i + 1 == total && trailing_extra > Pt::ZERO {
             needed += trailing_extra;
+        } else {
+            needed -= line_hang(i);
         }
         if needed > avail {
             break;
@@ -1485,6 +1493,7 @@ fn emit_split_paragraph<'doc>(
         let n_fit = lines_that_fit(
             total,
             |i| placed.line_height(i),
+            |i| placed.line_hang(i),
             if first_segment {
                 cont_style.space_before
             } else {
@@ -2227,7 +2236,18 @@ pub(crate) fn layout_section_with_clearance(
                             // `cursor_y` below still advances by the full
                             // height, so anything following on this page is
                             // placed exactly as before.
-                            let fit_height = para.size.height - effective_style.space_after;
+                            //
+                            // Nor is the last line's Auto extra, which hangs
+                            // past the page bottom unless a bottom border stands
+                            // below it (`lines_that_fit`).
+                            let last_hang = match placed.line_count() {
+                                n if n > 0 && placed.bottom_border_space() == Pt::ZERO => {
+                                    placed.line_hang(n - 1)
+                                }
+                                _ => Pt::ZERO,
+                            };
+                            let fit_height =
+                                para.size.height - effective_style.space_after - last_hang;
                             if state.cursor_y + fit_height > state.bottom
                                 && !state.at_full_height_column_top()
                             {
@@ -2724,6 +2744,7 @@ mod fit_tests {
         lines_that_fit(
             10,
             |_| Pt::new(10.0),
+            |_| Pt::ZERO,
             Pt::new(space_before),
             Pt::new(trailing),
             Pt::new(avail),
