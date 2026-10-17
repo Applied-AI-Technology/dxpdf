@@ -12,8 +12,8 @@ use crate::render::layout::cell::{layout_cell, CellLayout};
 use super::borders::{border_width, plan_table_borders, resolve_table_cell_borders, CellEdge};
 use super::grid::{expand_rows_for_vmerge, is_vmerge_continue};
 use super::types::{
-    CellLayoutEntry, MeasuredRow, MeasuredTable, RowInsets, TableBorderConfig, TableRowInput,
-    VerticalMergeState,
+    CellBorderOverride, CellLayoutEntry, MeasuredRow, MeasuredTable, RowInsets, TableBorderConfig,
+    TableRowInput, VerticalMergeState,
 };
 
 /// Measure all table rows: lay out cell content, compute row heights and cell
@@ -32,16 +32,66 @@ use super::types::{
 /// spaced table, where every cell draws its own borders inside its own box and
 /// the gap between rows is the spacing itself.
 ///
-/// One definition, read twice: the assembly pass reports it as
-/// `MeasuredRow::border_gap_below`, and the measuring pass needs it earlier
-/// because a declared row height has to contain it.
-fn strip_below(row: &[super::borders::CellBorders], has_next: bool, cell_spacing: Pt) -> Pt {
-    if !has_next || cell_spacing > Pt::ZERO {
+/// A line only a cell's own bottom edge declares — its `w:tcBorders/w:bottom`,
+/// with no cell below declaring a top there — sits in that cell's bottom
+/// margin and takes only what is wider than it. A line the lower cell also
+/// declares as its top, or that comes from the table's `insideH`, takes its
+/// whole width. Measured against `test-files/border-margin-room.docx`: under
+/// 1.45pt margins a 0.5pt cell bottom border takes no room and a 3pt one
+/// 1.55, a cell top border or an `insideH` its full width, and with no
+/// margins every one of them its width. The clerk reports rule their header
+/// row with a bottom border alone, and each such row was 0.5pt too tall;
+/// the transaction reports and the `ListTable3` reports state the same edge
+/// as the next row's top too, and Word gives it its width there.
+fn strip_below(
+    row: &TableRowInput,
+    next: Option<&TableRowInput>,
+    borders: &[super::borders::CellBorders],
+    cell_spacing: Pt,
+) -> Pt {
+    let Some(next) = next else {
+        return Pt::ZERO;
+    };
+    if cell_spacing > Pt::ZERO {
         return Pt::ZERO;
     }
-    row.iter()
-        .map(|b| border_width(b.bottom))
+    let mut start = row.grid_before as usize;
+    row.cells
+        .iter()
+        .zip(borders)
+        .map(|(cell, b)| {
+            let span = start..start + cell.grid_span.max(1) as usize;
+            start = span.end;
+            let width = border_width(b.bottom);
+            let own = b.bottom.line().is_some_and(|line| {
+                matches!(
+                    cell.cell_borders.as_ref().and_then(|c| c.bottom),
+                    Some(CellBorderOverride::Border(declared)) if declared == line
+                )
+            });
+            if own && !declares_top_within(next, span) {
+                (width - cell.margins.bottom).max(Pt::ZERO)
+            } else {
+                width
+            }
+        })
         .fold(Pt::ZERO, Pt::max)
+}
+
+/// Whether a cell of `row` overlapping grid columns `span` declares a line on
+/// its own top edge.
+fn declares_top_within(row: &TableRowInput, span: std::ops::Range<usize>) -> bool {
+    let mut start = row.grid_before as usize;
+    row.cells.iter().any(|cell| {
+        let cols = start..start + cell.grid_span.max(1) as usize;
+        start = cols.end;
+        cols.start < span.end
+            && span.start < cols.end
+            && matches!(
+                cell.cell_borders.as_ref().and_then(|c| c.top),
+                Some(CellBorderOverride::Border(_))
+            )
+    })
 }
 
 pub(super) fn measure_table_rows(
@@ -385,7 +435,12 @@ pub(super) fn measure_table_rows(
             // With cell spacing there is no shared edge to reserve room for:
             // every cell draws its own bottom border inside its own box, and
             // the gap between rows is the spacing itself.
-            let border_gap_below = strip_below(&borders, row_idx + 1 < num_rows, cell_spacing);
+            let border_gap_below = strip_below(
+                &rows[row_idx],
+                rows.get(row_idx + 1),
+                &borders,
+                cell_spacing,
+            );
             MeasuredRow {
                 entries,
                 borders,
