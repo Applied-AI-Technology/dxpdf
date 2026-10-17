@@ -4,6 +4,7 @@
 use crate::model::Dup;
 use serde::Deserialize;
 
+use crate::docx::dimension::Dimension;
 use crate::docx::error::Result;
 use crate::docx::model::*;
 use crate::docx::parse::properties::schema::paragraph::PPrXml;
@@ -207,6 +208,7 @@ const _: Option<SectPrXml> = None;
 impl From<StylesXml> for StyleSheet {
     fn from(x: StylesXml) -> Self {
         let mut sheet = StyleSheet::default();
+        sheet.doc_defaults_paragraph = absent_paragraph_defaults();
 
         if let Some(dd) = Dup::from(x.doc_defaults).into_value() {
             if let Some(r) = Dup::from(dd.r_pr_default)
@@ -216,11 +218,11 @@ impl From<StylesXml> for StyleSheet {
                 let (rp, _) = r.split();
                 sheet.doc_defaults_run = rp;
             }
-            if let Some(p) = Dup::from(dd.p_pr_default)
-                .into_value()
-                .and_then(|d| Dup::from(d.p_pr).into_value())
-            {
-                sheet.doc_defaults_paragraph = p.split().properties;
+            if let Some(d) = Dup::from(dd.p_pr_default).into_value() {
+                sheet.doc_defaults_paragraph = Dup::from(d.p_pr)
+                    .into_value()
+                    .map(|p| p.split().properties)
+                    .unwrap_or_default();
             }
         }
 
@@ -232,6 +234,23 @@ impl From<StylesXml> for StyleSheet {
 
         sheet.latent_styles = Dup::from(x.latent_styles).into_value().map(Into::into);
         sheet
+    }
+}
+
+/// The paragraph defaults Word supplies when a styles part has no
+/// `w:pPrDefault`: 8pt after and 1.15 lines (§17.7.2 leaves them to the
+/// application; §17.3.1.33's zero-and-single are what an *empty* `pPrDefault`
+/// gives). Word draws `test-files/paragraph-defaults-none.docx` with them —
+/// with or without a `settings.xml` naming a compatibility mode — and a
+/// paragraph's own `w:spacing` replaces them attribute by attribute.
+fn absent_paragraph_defaults() -> ParagraphProperties {
+    ParagraphProperties {
+        spacing: Dup::from(Some(ParagraphSpacing {
+            after: Some(Dimension::new(160)),
+            line: Some(LineSpacing::Auto(Dimension::new(276))),
+            ..ParagraphSpacing::default()
+        })),
+        ..ParagraphProperties::default()
     }
 }
 

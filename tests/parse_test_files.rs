@@ -454,6 +454,9 @@ const ALL_FILES: &[&str] = &[
     "page-bottom-spacing.docx",
     "oversized-word.docx",
     "table-widths.docx",
+    "paragraph-defaults-none.docx",
+    "paragraph-defaults-15.docx",
+    "paragraph-defaults-explicit.docx",
     "autofit-columns.docx",
 ];
 
