@@ -107,7 +107,6 @@ pub fn fit_lines_with_first(
     // space a paragraph's own right indent excludes. Until then the ordinary
     // `content_width` bound applies.
     let mut margin_span_active = false;
-    let mut metrics = LineMetrics::default();
     let mut last_break_point = None; // index after which we can break
 
     let mut i = 0;
@@ -116,7 +115,7 @@ pub fn fit_lines_with_first(
 
         // Explicit line break — emit current line including the break fragment.
         if frag.is_line_break() {
-            metrics.add(frag);
+            let metrics = range_metrics(fragments, line_start, i + 1);
             lines.push(FittedLine {
                 start: line_start,
                 end: i + 1,
@@ -131,7 +130,6 @@ pub fn fit_lines_with_first(
             line_width = Pt::ZERO;
             pen_x = line_pen_start(lines.is_empty());
             margin_span_active = false;
-            metrics = LineMetrics::default();
             last_break_point = None;
             i += 1;
             continue;
@@ -201,7 +199,6 @@ pub fn fit_lines_with_first(
                         line_width = Pt::ZERO;
                         pen_x = line_pen_start(lines.is_empty());
                         margin_span_active = false;
-                        metrics = LineMetrics::default();
                         last_break_point = None;
                         // Re-evaluate this tab against the fresh line.
                         continue;
@@ -251,7 +248,6 @@ pub fn fit_lines_with_first(
             line_width = Pt::ZERO;
             pen_x = line_pen_start(lines.is_empty());
             margin_span_active = false;
-            metrics = LineMetrics::default();
             last_break_point = None;
             // Resume *at the break*, not at the fragment that overflowed.
             //
@@ -284,7 +280,6 @@ pub fn fit_lines_with_first(
         if !matches!(frag, Fragment::PTab { .. }) {
             pen_x += frag_width;
         }
-        metrics.add(frag);
 
         // Track break opportunity. A text fragment carries UAX #14's answer
         // (`crate::i18n::segment` computed it over the whole paragraph text,
@@ -306,6 +301,7 @@ pub fn fit_lines_with_first(
 
     // Emit remaining fragments as the last line.
     if line_start < fragments.len() {
+        let metrics = range_metrics(fragments, line_start, fragments.len());
         lines.push(FittedLine {
             start: line_start,
             end: fragments.len(),
@@ -427,14 +423,35 @@ struct RangeMeasure {
     ascent: Pt,
 }
 
-/// Measure total width and the [`LineMetrics`] of a range of fragments.
-fn measure_range(fragments: &[Fragment], start: usize, end: usize) -> RangeMeasure {
-    let mut width = Pt::ZERO;
+/// The [`LineMetrics`] of the line `fragments[start..end]`.
+///
+/// Spaces that end the line are left out: they hang past its end, and Word
+/// does not stand the line taller for them — it ends a 9pt line with an
+/// unformatted 11pt space run and keeps the line 9pt tall
+/// (ShellfishTransactionReport's `{ orderPaidDate}`). A space before a break
+/// ends the line as much as one at a wrap. A line of nothing but spaces keeps
+/// them, having nothing else to stand on.
+fn range_metrics(fragments: &[Fragment], start: usize, end: usize) -> LineMetrics {
+    let line = &fragments[start..end];
+    let blank = |f: &Fragment| matches!(f, Fragment::Text { text, .. } if text.trim().is_empty());
+    let content_end = line
+        .iter()
+        .rposition(|f| !blank(f) && !f.is_line_break())
+        .map_or(line.len(), |last| last + 1);
     let mut metrics = LineMetrics::default();
-    for frag in &fragments[start..end] {
-        width += frag.width();
+    for (i, frag) in line.iter().enumerate() {
+        if i >= content_end && blank(frag) {
+            continue;
+        }
         metrics.add(frag);
     }
+    metrics
+}
+
+/// Measure total width and the [`LineMetrics`] of a range of fragments.
+fn measure_range(fragments: &[Fragment], start: usize, end: usize) -> RangeMeasure {
+    let width = fragments[start..end].iter().map(Fragment::width).sum();
+    let metrics = range_metrics(fragments, start, end);
     RangeMeasure {
         width,
         height: metrics.height(),
@@ -574,6 +591,46 @@ mod tests {
             }),
             color: RgbColor::BLACK,
         }
+    }
+
+    /// `frag` with an 11pt-like reach: 12pt up, 5pt down.
+    fn tall(text: &str, width: f32, break_after: BreakAfter) -> Fragment {
+        let mut f = frag(text, width, break_after);
+        if let Fragment::Text { metrics, .. } = &mut f {
+            metrics.ascent = Pt::new(12.0);
+            metrics.descent = Pt::new(5.0);
+        }
+        f
+    }
+
+    /// A space that ends a line hangs past it and adds nothing to its height:
+    /// Word ends a 9pt line with an unformatted 11pt space run and keeps the
+    /// line 9pt tall (ShellfishTransactionReport, `{ orderPaidDate}`). The
+    /// same space inside a line counts.
+    #[test]
+    fn a_line_end_space_adds_nothing_to_the_line() {
+        let frags = vec![
+            frag("word", 30.0, BreakAfter::Prohibited),
+            tall(" ", 3.0, BreakAfter::Opportunity),
+            frag("next", 80.0, BreakAfter::Opportunity),
+        ];
+        let lines = fit_lines(&frags, Pt::new(50.0));
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            lines[0].height.raw(),
+            14.0,
+            "the space's 17pt is not charged"
+        );
+        assert_eq!(lines[0].ascent.raw(), 10.0);
+
+        let inside = vec![
+            frag("word", 30.0, BreakAfter::Prohibited),
+            tall(" ", 3.0, BreakAfter::Opportunity),
+            frag("more", 10.0, BreakAfter::Opportunity),
+        ];
+        let lines = fit_lines(&inside, Pt::new(50.0));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].height.raw(), 17.0, "inside the line it counts");
     }
 
     #[test]
