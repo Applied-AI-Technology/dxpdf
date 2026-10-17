@@ -161,7 +161,10 @@ fn tailor_ascii_breaks(text: &str, offsets: &mut Vec<usize>) {
 /// digits where it could plausibly be a leading minus sign (start of text,
 /// after a space or an opening bracket). After a letter or digit the hyphen
 /// keeps its ordinary LB21 break opportunity, so `TOKEN-` / `1234567890` is
-/// how they wrap. ICU4X 2.x exposes no option for this
+/// how they wrap — and so it does after anything else a minus sign cannot
+/// follow, a closing bracket included: the tenant DelinquentDogReport's
+/// `{params.reportYear}-01-01`, whose header column Word sizes for `…}-`.
+/// ICU4X 2.x exposes no option for this
 /// ([`LineBreakOptions`] covers strictness and word mode only), hence this
 /// post-pass; if a future ICU4X grows a numeric-tailoring option, prefer it.
 ///
@@ -186,7 +189,9 @@ fn tailor_hyphen_digit_breaks(text: &str, offsets: &mut Vec<usize>) {
     let mut iter = text.char_indices().peekable();
     while let Some((i, c)) = iter.next() {
         if c == '-'
-            && prev.is_some_and(|p| p.is_alphanumeric())
+            && prev.is_some_and(|p| {
+                !p.is_whitespace() && p.general_category() != GeneralCategory::OpenPunctuation
+            })
             && iter
                 .peek()
                 .is_some_and(|&(_, next)| next.general_category() == GeneralCategory::DecimalNumber)
@@ -374,6 +379,16 @@ mod tests {
     fn a_minus_sign_still_glues_to_its_digits() {
         assert_eq!(pieces("-42"), ["-42"]);
         assert_eq!(pieces("t -42"), ["t ", "-42"]);
+        assert_eq!(pieces("(-42)"), ["(-42)"]);
+    }
+
+    /// After a closing bracket a hyphen is no minus sign, and breaks: the
+    /// tenant DelinquentDogReport's `{params.reportYear}-01-01`, whose column
+    /// Word sizes for `…}-` as its widest word.
+    #[test]
+    fn a_hyphen_after_a_closing_bracket_breaks_before_digits() {
+        assert_eq!(pieces("{year}-01-01"), ["{year}-", "01-", "01"]);
+        assert_eq!(pieces("f(x)-1"), ["f(x)-", "1"]);
     }
 
     /// U+2011 NON-BREAKING HYPHEN (class GL) must hold a token together —
