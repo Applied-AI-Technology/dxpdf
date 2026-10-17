@@ -163,7 +163,9 @@ mod tests {
             kerning: None,
             level: crate::i18n::bidi::BidiLevel::LTR,
             text: text.into(),
-            break_after: crate::render::layout::fragment::fixture_break_after(text),
+            // Each fragment is a word of its own: a fixture without the
+            // opportunity after it is one word, cut as a whole when too wide.
+            break_after: crate::render::layout::fragment::BreakAfter::Opportunity,
             font: Rc::new(FontProps {
                 vertical: None,
                 features: Default::default(),

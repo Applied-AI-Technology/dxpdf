@@ -452,6 +452,7 @@ const ALL_FILES: &[&str] = &[
     "ligatures-14otf.docx",
     "symbol-bullet.docx",
     "page-bottom-spacing.docx",
+    "oversized-word.docx",
 ];
 
 #[test]

@@ -8,10 +8,13 @@
 //!
 //! UAX #14 gives that path exactly one break opportunity, after the `:` in
 //! `"Z:`, and none after: `\` is class PR, and [LB24] (`PR × AL`) and [LB25]
-//! (`PR × NU`) both forbid breaking after it. So the fitter meets an early
-//! opportunity followed by a run wider than the line with nothing legal behind
-//! it — and on overflow it rewound to that opportunity but resumed measuring at
-//! the fragment that overflowed. Everything in between was painted onto the new
+//! (`PR × NU`) both forbid breaking after it. (Word does not take that one
+//! either — between two ASCII characters it breaks only after a hyphen,
+//! `i18n::segment::tailor_ascii_breaks` — so the path is now one word cut where
+//! each line runs out.) So the fitter met an early opportunity followed by a
+//! run wider than the line with nothing legal behind it — and on overflow it
+//! rewound to that opportunity but resumed measuring at the fragment that
+//! overflowed. Everything in between was painted onto the new
 //! line without being counted into its width, so the line could not overflow
 //! again and swallowed the rest: one 295 pt line in a 167.80 pt cell, running
 //! 91 pt past the right edge of the page.
@@ -91,13 +94,25 @@ fn the_token_is_wrapped_rather_than_left_on_one_line() {
     // The guard on the guard: staying inside the text area would also be true
     // of a document that dropped the token altogether, or of one where it
     // happened to fit. It must actually occupy several lines.
+    //
+    // The path is one word — Word breaks after none of its `:`, `\` or `_`
+    // (`i18n::segment::tailor_ascii_breaks`) — so its lines are pieces of it
+    // with no word of their own to find: they are the lines of its cell, from
+    // the one its opening quote starts on, reaching the cell's left edge.
     let pages = pages();
-    let path_baselines = baselines(&pages)
-        .into_iter()
-        .filter(|(_, pieces)| {
-            let line: String = pieces.iter().map(|(_, t)| t.as_str()).collect();
-            line.contains("Vorlagen") || line.contains("Formtastic") || line.contains("Z:")
+    let lines = baselines(&pages);
+    let (start, left) = lines
+        .iter()
+        .find_map(|(y, pieces)| {
+            pieces
+                .iter()
+                .find(|(_, t)| t.starts_with('"'))
+                .map(|(right, _)| (*y, *right))
         })
+        .expect("the path's opening quote");
+    let path_baselines = lines
+        .range(start..)
+        .filter(|(_, pieces)| pieces.iter().any(|(right, _)| *right >= left - 0.5))
         .count();
     assert!(
         path_baselines >= 3,

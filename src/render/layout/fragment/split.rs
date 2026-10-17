@@ -21,33 +21,73 @@ use crate::render::spacing;
 /// the paragraph layer — callers in either layer pass the same closures.
 pub type MeasureFn<'a> = Option<&'a dyn Fn(&str, &FontProps) -> (Pt, TextMetrics)>;
 
-/// True for a text fragment that is both too wide and actually splittable.
+/// Which fragments belong to a word too wide for `max_width` — and so are to
+/// be cut — as a mask over `fragments`.
 ///
-/// "Too wide" is measured **without trailing whitespace**, the same width line
-/// fitting checks overflow against: trailing space is allowed to hang past the
-/// margin, so a fragment whose visible text fits is not over-wide however much
-/// space trails it. Documents lay out with runs of spaces — one in
-/// `test-cases/` pads a header with 130 of them — and UAX #14 keeps such a run
-/// in a single unit, because [LB7] forbids a break *before* a space. Measuring
-/// the full width would send that unit here to be cut into 130 one-space
-/// fragments, and the visible word ahead of them would be dragged onto its own
-/// line for want of room that was never needed.
+/// A word is what lies between two break opportunities: a run of text
+/// fragments each ending [`BreakAfter::Prohibited`], and the one after them.
+/// It spans as many fragments as `<w:r>` runs split it into, and Word cuts it
+/// as one: `{#owner}{signature}` `{` `signature2}{/owner}` is three runs, each
+/// narrower than its 159pt line and together 191pt, and Word fills the line to
+/// `…{signature2}{/` before cutting (DogLicenseTemplate_old1415). Checked one
+/// fragment at a time, none was cut, and the line broke at a run boundary.
 ///
-/// The *cluster* count is what matters for splittability: a single cluster
-/// cannot be split however many scalars or bytes it occupies. An earlier
-/// byte-length (`text.len() > 1`) spelling of this test disagreed with the
-/// split itself for any non-ASCII single character — it reported "needs
-/// split", then split nothing, and the caller paid for a full clone of the
-/// fragment vector. A scalar count has the same disagreement for a
-/// one-cluster accented letter.
+/// "Too wide" is measured **without the word's trailing whitespace**, the same
+/// width line fitting checks overflow against: trailing space is allowed to
+/// hang past the margin, so a word whose visible text fits is not over-wide
+/// however much space trails it. Documents lay out with runs of spaces — one
+/// in `test-cases/` pads a header with 130 of them — and UAX #14 keeps such a
+/// run in a single unit, because [LB7] forbids a break *before* a space.
+/// Measuring the full width would send that unit here to be cut into 130
+/// one-space fragments, and the visible word ahead of them would be dragged
+/// onto its own line for want of room that was never needed.
 ///
 /// [LB7]: https://www.unicode.org/reports/tr14/#LB7
-fn needs_split(fragment: &Fragment, max_width: Pt) -> bool {
-    matches!(
-        fragment,
-        Fragment::Text { trimmed_width, text, .. }
-            if *trimmed_width > max_width && spacing::unit_count(text) > 1
-    )
+fn oversized_words(fragments: &[Fragment], max_width: Pt) -> Vec<bool> {
+    let text_at = |i: usize| match fragments.get(i) {
+        Some(Fragment::Text {
+            width,
+            trimmed_width,
+            break_after,
+            ..
+        }) => Some((*width, *trimmed_width, *break_after)),
+        _ => None,
+    };
+    let mut cut = vec![false; fragments.len()];
+    let mut start = 0;
+    while start < fragments.len() {
+        if text_at(start).is_none() {
+            start += 1;
+            continue;
+        }
+        let mut end = start;
+        let mut width = Pt::ZERO;
+        while let Some((w, trimmed, after)) = text_at(end) {
+            if after == BreakAfter::Prohibited && text_at(end + 1).is_some() {
+                width += w;
+                end += 1;
+            } else {
+                width += trimmed;
+                break;
+            }
+        }
+        if width > max_width {
+            cut[start..=end].fill(true);
+        }
+        start = end + 1;
+    }
+    cut
+}
+
+/// Whether `fragment` has more than one cluster to cut it into. The *cluster*
+/// count is what matters: a single cluster cannot be split however many
+/// scalars or bytes it occupies. An earlier byte-length (`text.len() > 1`)
+/// spelling of this test disagreed with the split itself for any non-ASCII
+/// single character — it reported "needs split", then split nothing, and the
+/// caller paid for a full clone of the fragment vector. A scalar count has
+/// the same disagreement for a one-cluster accented letter.
+fn splittable(fragment: &Fragment) -> bool {
+    matches!(fragment, Fragment::Text { text, .. } if spacing::unit_count(text) > 1)
 }
 
 /// Split text fragments wider than `max_width` into per-cluster fragments.
@@ -69,12 +109,14 @@ pub fn split_oversized_fragments(
     if max_width <= Pt::ZERO {
         return None;
     }
-    if !fragments.iter().any(|f| needs_split(f, max_width)) {
+    let cut = oversized_words(fragments, max_width);
+    let to_split = |i: usize| cut[i] && splittable(&fragments[i]);
+    if !(0..fragments.len()).any(to_split) {
         return None;
     }
 
     let mut result = Vec::with_capacity(fragments.len());
-    for frag in fragments {
+    for (index, frag) in fragments.iter().enumerate() {
         let Fragment::Text {
             text,
             width,
@@ -88,13 +130,14 @@ pub fn split_oversized_fragments(
             level,
             shaped,
             kerning,
+            break_after,
             ..
         } = frag
         else {
             result.push(frag.clone());
             continue;
         };
-        if !needs_split(frag, max_width) {
+        if !to_split(index) {
             result.push(frag.clone());
             continue;
         }
@@ -147,7 +190,14 @@ pub fn split_oversized_fragments(
                 // reached once the word has a line to itself and still doesn't
                 // fit. That is the order Word applies too: move the word down
                 // first, cut it only if it still won't fit.
-                break_after: BreakAfter::Prohibited,
+                //
+                // The last cluster keeps the fragment's own status: what
+                // follows the word is still where the next one may begin.
+                break_after: if i + 1 == unit_count {
+                    *break_after
+                } else {
+                    BreakAfter::Prohibited
+                },
                 width: w + Pt::new(pair),
                 trimmed_width: w,
                 metrics: unit_metrics,
@@ -269,6 +319,50 @@ mod tests {
         assert_eq!(metrics.ascent.raw(), 9.0);
     }
 
+    /// A word is what lies between two break opportunities, however many
+    /// fragments — `<w:r>` runs — it spans. Word cuts `{#owner}{signature}`
+    /// `{` `signature2}{/owner}`, three runs each narrower than its line, where
+    /// the line runs out (DogLicenseTemplate_old1415), not at a run boundary.
+    #[test]
+    fn a_word_over_several_fragments_is_cut_as_one() {
+        // "ab" | "cd " with no opportunity between: 40pt together, 20pt each,
+        // on a 30pt line.
+        let frags = vec![text_frag("ab", 20.0), text_frag("cd ", 20.0)];
+        let result = split_oversized_fragments(&frags, Pt::new(30.0), None).expect("splits");
+        assert_eq!(texts(&result), ["a", "b", "c", "d", " "]);
+    }
+
+    /// The opportunity after a cut word survives the cut: it is the word's,
+    /// not any one cluster's, and it is still where the next word may start.
+    #[test]
+    fn a_cut_word_keeps_the_opportunity_after_it() {
+        let frags = vec![
+            text_frag("ab", 20.0),
+            text_frag("cd ", 20.0),
+            text_frag("ef", 10.0),
+        ];
+        let result = split_oversized_fragments(&frags, Pt::new(30.0), None).expect("splits");
+        assert_eq!(texts(&result), ["a", "b", "c", "d", " ", "ef"]);
+        let breaks: Vec<BreakAfter> = result
+            .iter()
+            .map(|f| match f {
+                Fragment::Text { break_after, .. } => *break_after,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            breaks,
+            [
+                BreakAfter::Prohibited,
+                BreakAfter::Prohibited,
+                BreakAfter::Prohibited,
+                BreakAfter::Prohibited,
+                BreakAfter::Opportunity,
+                BreakAfter::Prohibited,
+            ]
+        );
+    }
+
     #[test]
     fn nothing_to_split_returns_none() {
         let frags = vec![text_frag("hi", 10.0)];
@@ -324,12 +418,13 @@ mod tests {
 
     #[test]
     fn fragments_that_fit_pass_through_unchanged() {
+        // Two words: "ab " ends at an opportunity, so "ok" is not part of it.
         let frags = vec![
-            text_frag("ab", 60.0), // splits
-            text_frag("ok", 5.0),  // fits — must survive whole
+            text_frag("ab ", 60.0), // splits
+            text_frag("ok", 5.0),   // fits — must survive whole
         ];
         let result = split_oversized_fragments(&frags, Pt::new(20.0), None).expect("splits");
-        assert_eq!(texts(&result), ["a", "b", "ok"]);
+        assert_eq!(texts(&result), ["a", "b", " ", "ok"]);
     }
 
     /// A combining mark must travel with its base. Splitting per scalar put the

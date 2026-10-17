@@ -107,7 +107,33 @@ pub fn break_offsets(text: &str) -> Vec<usize> {
     let mut offsets: Vec<usize> =
         SEGMENTER.with(|segmenter| segmenter.as_borrowed().segment_str(text).skip(1).collect());
     tailor_hyphen_digit_breaks(text, &mut offsets);
+    tailor_ascii_breaks(text, &mut offsets);
     offsets
+}
+
+/// Between two printable ASCII characters, Word breaks a line only after a
+/// hyphen; UAX #14 also breaks after a solidus before a letter (`/` is SY) and
+/// between closing and opening brackets (`}{`, CL then OP), and Word does
+/// neither. Measured in Word for Mac 16: `abcdefgh/ijklmnop/qrstuvwx` in a
+/// 72pt cell is one word, cut where the line runs out (`abcdefgh/ijklm` /
+/// `nop/qrstuvwx`), and `abcd/` is followed on its line by as much of a long
+/// word as fits, where a space or a hyphen in the same place sends the long
+/// word to the next line (`test-files/oversized-word.docx`); the tenant
+/// impoundment report cuts `{owner_name}{/is_data}{/tab` / `leItems}` across
+/// both a `}{` and a `/`, and its receipt fills `t}{/recei` on a line. Those
+/// two are the opportunities measured; the rest UAX #14 grants between ASCII
+/// punctuation and letters (after `!` or `?` before a letter, say) are taken
+/// away on the same footing — Word's Latin text breaks at spaces and hyphens.
+/// A break next to a space, or touching any non-ASCII character, is left to
+/// UAX #14, and so is the break at the end of `text`, whose follower is not
+/// known here.
+fn tailor_ascii_breaks(text: &str, offsets: &mut Vec<usize>) {
+    let graphic = |c: Option<char>| c.is_some_and(|c| c.is_ascii_graphic());
+    offsets.retain(|&o| {
+        let before = text[..o].chars().next_back();
+        let after = text[o..].chars().next();
+        !(graphic(before) && graphic(after)) || before == Some('-')
+    });
 }
 
 /// UAX #14's untailored LB25 glues a hyphen to a following digit
@@ -174,6 +200,15 @@ mod tests {
             prev = offset;
         }
         out
+    }
+
+    /// Between ASCII characters Word breaks only after a hyphen — not after a
+    /// solidus, nor between brackets — and a space still breaks.
+    #[test]
+    fn ascii_punctuation_breaks_only_after_a_hyphen() {
+        assert_eq!(pieces("abcd/efgh and/or"), ["abcd/efgh ", "and/or"]);
+        assert_eq!(pieces("{#x}{/x}"), ["{#x}{/x}"]);
+        assert_eq!(pieces("co-op TOKEN-123"), ["co-", "op ", "TOKEN-", "123"]);
     }
 
     // ── The gap #130 exists to close ────────────────────────────────────────
@@ -328,18 +363,17 @@ mod tests {
         assert_eq!(pieces("co\u{2012}operate"), ["co\u{2012}", "operate"]);
     }
 
-    /// Two genuine behaviour changes on Latin text, locked in so they are
-    /// decisions rather than surprises. A slash gains a break opportunity
-    /// after it, which is what stops a long URL from overflowing; an em dash
-    /// (class B2) becomes its own unit and may therefore begin a line, which
-    /// is UAX #14-correct and the one change that reads as a regression
-    /// against Word.
+    /// A slash is no break opportunity, as in Word (`tailor_ascii_breaks`):
+    /// a URL is one word, and a line too narrow for it cuts it where the line
+    /// runs out (`fragment::split_oversized_fragments`), as Word does. An em
+    /// dash (class B2) becomes its own unit and may therefore begin a line,
+    /// which is UAX #14-correct and reads as a regression against Word.
     #[test]
-    fn slashes_and_em_dashes_gain_opportunities() {
-        assert_eq!(pieces("a/b/c"), ["a/", "b/", "c"]);
+    fn slashes_hold_and_em_dashes_gain_opportunities() {
+        assert_eq!(pieces("a/b/c"), ["a/b/c"]);
         assert_eq!(
             pieces("https://example.com/some/path"),
-            ["https://", "example.com/", "some/", "path"],
+            ["https://example.com/some/path"],
         );
         assert_eq!(pieces("long—dash—text"), ["long", "—", "dash", "—", "text"],);
     }
