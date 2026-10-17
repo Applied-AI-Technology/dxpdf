@@ -11,6 +11,13 @@
 //! with an 11pt Symbol bullet steps 16.08pt, Symbol's ascent over Calibri's
 //! descent, where its unlabelled continuation steps 15.36pt.
 //!
+//! The label is not scaled with the text by Auto spacing. Word's render of
+//! this fixture (Word for Mac 16, PDF export, 2026-10-16), from one reference
+//! line to the next: R0→R1 62.88pt, R1→R2 42.48pt (a 22pt Symbol bullet: its
+//! 22.12pt up over Calibri's 2.95pt down and 2.01pt extra, not 28.97pt or
+//! 31.0pt), R2→R3 40.32pt (22pt Wingdings), R3→R4 30.96pt — each within the
+//! 0.24pt grid Word places lines on of the rule asserted here, in Calibri.
+//!
 //! Laid out here in `DxNoGap` as "Calibri" (0.95em up, 0.25em down, no gap),
 //! which carries no bullet at all, so the glyph comes from whatever the host
 //! has and only the line metrics are asserted.
@@ -60,11 +67,13 @@ const SYMBOL: (f32, f32) = (2059.0 / 2048.0, 450.0 / 2048.0);
 const WINGDINGS: (f32, f32) = (1841.0 / 2048.0, 432.0 / 2048.0);
 const TEXT: (f32, f32) = (0.95, 0.25);
 
-/// A 1.15 line holding 11pt text and a label of `face` at `size`.
+/// A 1.15 line holding 11pt text and a label of `face` at `size`: the label
+/// reaches its own height, unscaled, and the text's line is scaled with its
+/// extra below the text.
 fn line(face: (f32, f32), size: f32) -> f32 {
     let up = (face.0 * size).max(TEXT.0 * 11.0);
-    let down = (face.1 * size).max(TEXT.1 * 11.0);
-    (up + down) * 1.15
+    let down = (face.1 * size).max(TEXT.1 * 11.0 + 0.15 * (TEXT.0 + TEXT.1) * 11.0);
+    up + down
 }
 
 fn plain() -> f32 {

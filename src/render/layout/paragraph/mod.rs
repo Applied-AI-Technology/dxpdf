@@ -1797,6 +1797,7 @@ mod tests {
             resolve_line_height(
                 Pt::new(14.0),
                 Pt::new(14.0),
+                Pt::new(14.0),
                 &LineSpacingRule::Auto(1.0),
                 crate::render::layout::ShapeAutoFit::NONE
             )
@@ -1805,6 +1806,7 @@ mod tests {
         );
         assert_eq!(
             resolve_line_height(
+                Pt::new(14.0),
                 Pt::new(14.0),
                 Pt::new(14.0),
                 &LineSpacingRule::Auto(1.5),
@@ -1822,10 +1824,26 @@ mod tests {
         let h = resolve_line_height(
             Pt::new(325.0),
             Pt::ZERO,
+            Pt::new(325.0),
             &LineSpacingRule::Auto(1.08),
             crate::render::layout::ShapeAutoFit::NONE,
         );
         assert_eq!(h.raw(), 325.0, "image height should not be multiplied");
+    }
+
+    #[test]
+    fn resolve_line_height_auto_extra_hangs_from_the_text() {
+        // A 22pt Symbol bullet reaching 4.83pt down beside 11pt Calibri at
+        // 1.15: the extra hangs below Calibri's 2.95pt descent, inside the
+        // bullet's reach, and the line is 22.12 + 2.95 + 2.01 — Word 27.04.
+        let h = resolve_line_height(
+            Pt::new(22.12 + 4.83),
+            Pt::new(13.43),
+            Pt::new(22.12 + 2.95),
+            &LineSpacingRule::Auto(1.15),
+            crate::render::layout::ShapeAutoFit::NONE,
+        );
+        assert!((h.raw() - 27.085).abs() < 0.01, "got {}", h.raw());
     }
 
     #[test]
@@ -1836,6 +1854,7 @@ mod tests {
         let h = resolve_line_height(
             Pt::new(100.0),
             Pt::new(14.0),
+            Pt::new(100.0),
             &LineSpacingRule::Auto(1.5),
             crate::render::layout::ShapeAutoFit::NONE,
         );
@@ -1846,6 +1865,7 @@ mod tests {
     fn resolve_line_height_exact_overrides() {
         assert_eq!(
             resolve_line_height(
+                Pt::new(14.0),
                 Pt::new(14.0),
                 Pt::new(14.0),
                 &LineSpacingRule::Exact(Pt::new(20.0)),
@@ -1862,6 +1882,7 @@ mod tests {
             resolve_line_height(
                 Pt::new(14.0),
                 Pt::new(14.0),
+                Pt::new(14.0),
                 &LineSpacingRule::AtLeast(Pt::new(10.0)),
                 crate::render::layout::ShapeAutoFit::NONE,
             )
@@ -1871,6 +1892,7 @@ mod tests {
         );
         assert_eq!(
             resolve_line_height(
+                Pt::new(8.0),
                 Pt::new(8.0),
                 Pt::new(8.0),
                 &LineSpacingRule::AtLeast(Pt::new(10.0)),

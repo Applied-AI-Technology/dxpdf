@@ -125,6 +125,7 @@ pub(super) fn compute_line_placements(
                 width: first.width,
                 height: first.height,
                 text_height: first.text_height,
+                overhang: first.overhang,
                 ascent: first.ascent,
                 has_break: first.has_break,
             }
@@ -1872,7 +1873,11 @@ pub(super) fn line_box(
     } else {
         default_line_height
     };
-    let height = resolve_line_height(natural, text_height, rule, auto_fit);
+    // The room above the text's own descent, which an Auto multiple's extra
+    // hangs from: the whole natural line when nothing else on it reaches
+    // further down than the text.
+    let above_text_descent = natural - line.overhang;
+    let height = resolve_line_height(natural, text_height, above_text_descent, rule, auto_fit);
     let baseline = match rule {
         LineSpacingRule::Auto(_) => line.ascent,
         LineSpacingRule::Exact(_) => height * EXACT_BASELINE,
@@ -1887,13 +1892,22 @@ const EXACT_BASELINE: f32 = 0.8;
 
 /// §17.3.1.33 line height for one line, then §20.1.2.1.18 `@lnSpcReduction`.
 ///
-/// An Auto multiple scales the line's **text** height and adds the difference
-/// to its natural height, so an inline picture is not scaled with it: Word
-/// (Word for Mac 16, 2026-10-16) sets a 40pt picture and 11pt Calibri at 1.15
-/// on a 44.9pt line — the picture, Calibri's descent, and 15% of Calibri's
-/// 13.43pt — and a picture alone on 42pt, 15% of the paragraph mark's line
-/// above its own height. For a line of text alone the two heights are one and
-/// this is the text height times the multiple.
+/// An Auto multiple scales the line's **text** height, and the difference
+/// hangs below the text's own descent, so an inline picture is not scaled with
+/// it: Word (Word for Mac 16, 2026-10-16) sets a 40pt picture and 11pt Calibri
+/// at 1.15 on a 44.9pt line — the picture, Calibri's descent, and 15% of
+/// Calibri's 13.43pt — and a picture alone on 42pt, 15% of the paragraph
+/// mark's line above its own height. For a line of text alone the two heights
+/// are one and this is the text height times the multiple.
+///
+/// Something unscaled that reaches further below the baseline than the text
+/// does takes the extra into its own reach rather than adding to it: a 22pt
+/// Symbol bullet (4.83pt down) beside 11pt Calibri at 1.15 sets a 27.04pt line
+/// in Word, Symbol's 22.12pt up over Calibri's 2.95pt down plus its 2.01pt
+/// extra — not 28.97pt, the bullet's reach plus the extra
+/// (`test-files/symbol-bullet.docx`). `above_text_descent` is the natural
+/// height less that overreach (`FittedLine::overhang`), which the extra is
+/// added to; on any other line it is the natural height.
 ///
 /// `auto_fit` is a parameter rather than something callers apply afterwards
 /// because four separate places resolve a line height — fitting, emission,
@@ -1905,6 +1919,7 @@ const EXACT_BASELINE: f32 = 0.8;
 pub(super) fn resolve_line_height(
     natural: Pt,
     text_height: Pt,
+    above_text_descent: Pt,
     rule: &LineSpacingRule,
     auto_fit: crate::render::layout::ShapeAutoFit,
 ) -> Pt {
@@ -1912,7 +1927,7 @@ pub(super) fn resolve_line_height(
         // Floored at the natural height: a multiple below 1 is unmeasured, and
         // the floor is what keeps an authored one from colliding glyph boxes.
         LineSpacingRule::Auto(multiplier) => {
-            (natural + text_height * (*multiplier - 1.0)).max(natural)
+            (above_text_descent + text_height * (*multiplier - 1.0)).max(natural)
         }
         LineSpacingRule::Exact(h) => *h,
         LineSpacingRule::AtLeast(min) => natural.max(*min),
@@ -2418,6 +2433,7 @@ mod tests {
                 width: Pt::ZERO,
                 height: Pt::ZERO,
                 text_height: Pt::ZERO,
+                overhang: Pt::ZERO,
                 ascent: Pt::ZERO,
                 has_break: false,
             }

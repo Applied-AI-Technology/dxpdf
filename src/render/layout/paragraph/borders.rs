@@ -199,6 +199,7 @@ pub(super) fn emit_segment_borders_and_shading(
         let line_h = resolve_line_height(
             default_line_height,
             default_line_height,
+            default_line_height,
             &style.line_spacing,
             style.auto_fit,
         );

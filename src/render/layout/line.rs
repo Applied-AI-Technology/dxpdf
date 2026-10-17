@@ -17,6 +17,12 @@ pub struct FittedLine {
     /// The same for text alone. §17.3.1.33: Auto line spacing multiplies text
     /// metrics, not inline image heights.
     pub text_height: Pt,
+    /// How much further below the baseline than the text something unscaled
+    /// on the line reaches — the part of [`Self::height`] an Auto multiple's
+    /// extra, which hangs below the text, falls inside
+    /// (`paragraph::line_emit::resolve_line_height`). Zero on a line where
+    /// nothing reaches below its text.
+    pub overhang: Pt,
     /// How far the baseline sits below the top of the natural line: the most
     /// any fragment puts above it.
     pub ascent: Pt,
@@ -117,6 +123,7 @@ pub fn fit_lines_with_first(
                 width: line_width,
                 height: metrics.height(),
                 text_height: metrics.text_height(),
+                overhang: metrics.overhang(),
                 ascent: metrics.above,
                 has_break: true,
             });
@@ -186,6 +193,7 @@ pub fn fit_lines_with_first(
                             width: m.width,
                             height: m.height,
                             text_height: m.text_height,
+                            overhang: m.overhang,
                             ascent: m.ascent,
                             has_break: false,
                         });
@@ -235,6 +243,7 @@ pub fn fit_lines_with_first(
                 width: m.width,
                 height: m.height,
                 text_height: m.text_height,
+                overhang: m.overhang,
                 ascent: m.ascent,
                 has_break: false,
             });
@@ -303,6 +312,7 @@ pub fn fit_lines_with_first(
             width: line_width,
             height: metrics.height(),
             text_height: metrics.text_height(),
+            overhang: metrics.overhang(),
             ascent: metrics.above,
             has_break: false,
         });
@@ -350,6 +360,19 @@ struct LineMetrics {
 impl LineMetrics {
     fn add(&mut self, frag: &Fragment) {
         match frag {
+            // A run whose line comes from a face other than the one drawing it
+            // — a list label in Symbol or Wingdings — reaches its own height,
+            // as a picture does, and is not the text an Auto multiple scales:
+            // Word sets a 22pt Symbol bullet beside 11pt Calibri at 1.15 on
+            // Symbol's reach above and Calibri's scaled line below
+            // (`test-files/symbol-bullet.docx`). Measured for such labels only.
+            Fragment::Text { metrics, font, .. } if font.vertical.is_some() => {
+                self.above = self.above.max(metrics.leading + metrics.ascent);
+                self.below = self.below.max(metrics.descent);
+            }
+            // The tab after such a label is set in its font and stands on its
+            // line, whose reach the label has already given.
+            Fragment::Tab { font, .. } if font.vertical.is_some() => {}
             Fragment::Text { metrics, .. } | Fragment::MathFraction { metrics, .. } => {
                 self.add_text(metrics)
             }
@@ -383,6 +406,11 @@ impl LineMetrics {
             .max(self.bare_break())
     }
 
+    /// How far below the text's own descent anything else on the line reaches.
+    fn overhang(&self) -> Pt {
+        (self.below - self.text_below).max(Pt::ZERO)
+    }
+
     fn text_height(&self) -> Pt {
         (self.text_above + self.text_below)
             .max(self.other)
@@ -395,6 +423,7 @@ struct RangeMeasure {
     width: Pt,
     height: Pt,
     text_height: Pt,
+    overhang: Pt,
     ascent: Pt,
 }
 
@@ -410,6 +439,7 @@ fn measure_range(fragments: &[Fragment], start: usize, end: usize) -> RangeMeasu
         width,
         height: metrics.height(),
         text_height: metrics.text_height(),
+        overhang: metrics.overhang(),
         ascent: metrics.above,
     }
 }
