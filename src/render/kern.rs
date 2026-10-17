@@ -30,13 +30,24 @@
 //! advance adjustment, between **two glyphs the `cmap` maps a character to**.
 //! A `kern` table pairs no other glyphs — not one of the 26,706 pairs in
 //! Calibri's, nor of Calibri Bold's, Times New Roman's or Arial's, names a
-//! glyph the `cmap` does not reach — so Word never kerns a ligature against its
-//! neighbour in them, where Carlito's `GPOS` does: `n`·`t_i` is −19 units in
-//! it and in Calibri's own `GPOS`, and nothing in Calibri's `kern` table, which
-//! is the difference between `{quantity}` fitting its cell and wrapping as it
-//! does in Word. Contextual kerning lookups are not applied. Within a lookup
-//! the first subtable that applies to the pair decides it; separate lookups add
-//! — as a shaper applies them.
+//! glyph the `cmap` does not reach. Contextual kerning lookups are not applied.
+//! Within a lookup the first subtable that applies to the pair decides it;
+//! separate lookups add — as a shaper applies them.
+//!
+//! # Characters, not glyphs
+//!
+//! Word kerns the **characters** either side of a glyph boundary, so a
+//! ligature is kerned by the letters it draws: its first against what precedes
+//! it and its last against what follows. Measured across the 118 tenant
+//! templates' Word renders in Calibri: `.`·`t_i` is set −44 units (67 times),
+//! `n`·`t_i` −19 and `p`·`t_i` −9 — Calibri's `.`·`t`, `n`·`t` and `p`·`t`
+//! pairs — while `t_i`·`o` takes `i`·`o`'s 0, not `t`·`o`'s −20; and in
+//! `ligatures-15.docx`, `a`·`ff` is set as `a`·`f` (−12). So every caller
+//! looks a pair up through the `cmap` from characters, ligated run or not,
+//! and the pair a ligature glyph would form in Carlito's `GPOS` (`n`·`t_i`,
+//! −19 there and in Calibri's own `GPOS`) is never asked for. That pair
+//! happens to equal `n`·`t`; Word's −19 before `{quantity}`'s `ti` is what
+//! fits it in its cell in the Clerk's Monthly Report.
 //!
 //! What this cannot recover is a pair the original's `kern` table omits and the
 //! stand-in's `GPOS` lists anyway. Carlito Regular has none among ASCII,

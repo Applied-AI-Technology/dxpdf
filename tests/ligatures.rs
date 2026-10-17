@@ -7,7 +7,8 @@
 //! handed to the documents as an embedded "Calibri", so no host font decides
 //! the result. Every advance in it is 500 units of a 1000-unit em except its one
 //! ligature, `f_i`, at 700 — so each `fi` it forms takes 300 units off a word —
-//! and its `kern` table has one pair, `f_i` against `f`, at −50.
+//! and its `kern` table pairs letters only: `i` against `f` at −50 and `f`
+//! against `f` at −30.
 
 use dxpdf::model::{EmbeddedFont, EmbeddedFontVariant};
 use dxpdf::render::layout::draw_command::{DrawCommand, LayoutedPage};
@@ -99,14 +100,24 @@ fn character_spacing_turns_ligatures_off() {
 }
 
 /// A ligated run is kerned between the glyphs it shaped to, from the `kern`
-/// table — here the one pair, `f_i` against `f`, inside `fifty`.
+/// table, by the letters either side of each: a ligature's last letter against
+/// what follows it and its first against what precedes it. Word, in Calibri:
+/// `staff` and `Wafflt` set `a`·`ff` 13 units of a 2048 em tight, Calibri's
+/// `a`·`f` pair (−12), where no `kern` table pair names a ligature glyph.
+/// Here `fifty`'s `f_i`·`f` is `i`·`f` (−50) and `office`'s `f`·`f_i` is
+/// `f`·`f` (−30).
 #[test]
-fn a_ligated_run_is_kerned_between_its_glyphs() {
+fn a_ligature_is_kerned_by_the_letters_it_draws() {
     let p = pages("ligatures-15.docx");
     let fifty = x_on(&p, "L6", "fluff") - x_on(&p, "L6", "fifty");
     assert!(
         (fifty - pt(2_700.0 - 50.0)).abs() < TOL,
-        "f_i·f·t·y·space less the pair, got {fifty}"
+        "f_i·f·t·y·space less i·f, got {fifty}"
+    );
+    let office = x_on(&p, "L6", "fifty") - x_on(&p, "L6", "office");
+    assert!(
+        (office - pt(3_200.0 - 30.0)).abs() < TOL,
+        "o·f·f_i·c·e·space less f·f, got {office}"
     );
 }
 

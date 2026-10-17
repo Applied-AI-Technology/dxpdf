@@ -327,8 +327,8 @@ def main() -> None:
 
     # ── A ligated font ───────────────────────────────────────────────────
     #
-    # One standard ligature, and a `kern` pair that only exists between the
-    # ligature and what follows it. See `build_ligated`.
+    # One standard ligature, and `kern` pairs between the letters it draws and
+    # its neighbours'. See `build_ligated`.
     write(build_ligated(), "DxLiga.ttf")
 
     # ── A ligated font with no glyph names ───────────────────────────────
@@ -706,9 +706,12 @@ def build_ligated() -> TTFont:
 
     Every advance is 500 units except the ligature's 700, so a word is its
     length in letters, less 300 units for each `fi` it ligates. Its `kern`
-    table has one pair, `f_i` against `f` at −50 units: a pair between a
-    ligature and its neighbour, which can only be kerned from the shaped glyph
-    sequence and not from the letters, as Word kerns ligated text.
+    table pairs letters only, as every Office font's does: `i` against `f` at
+    −50 units and `f` against `f` at −30. Word kerns a ligature by the letters
+    it draws — its last against what follows (`fifty`, `f_i`·`f` is `i`·`f`)
+    and its first against what precedes (`office`, `f`·`f_i` is `f`·`f`) —
+    and none of these pairs names the `f_i` glyph, so a kerning that looked
+    them up glyph by glyph would find neither.
     """
     names = [".notdef", "space"] + [_glyph_name(c) for c in KERN_CHARS] + ["f_i"]
     fb = FontBuilder(UPM, isTTF=True)
@@ -756,7 +759,7 @@ def build_ligated() -> TTFont:
     sub.format = 0
     sub.coverage = 1  # horizontal
     sub.tupleIndex = None
-    sub.kernTable = {("f_i", "f"): -50}
+    sub.kernTable = {("i", "f"): -50, ("f", "f"): -30}
     kern.kernTables = [sub]
     fb.font["kern"] = kern
     fb.font["head"].created = EPOCH

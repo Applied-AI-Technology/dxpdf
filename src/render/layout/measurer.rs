@@ -176,7 +176,8 @@ impl<'r> TextMeasurer<'r> {
     /// `text` **shaped** through HarfBuzz the way `shaping` says — for a run in
     /// a script that a cmap lookup renders wrongly, or one that takes ligatures
     /// — as its advance, and, for a kerned ligature run, the kerning pairs
-    /// between the glyphs it shaped to, one per spacing unit (as
+    /// between the glyphs it shaped to, looked up by the characters either
+    /// side of each, one per spacing unit (as
     /// [`TextMeasurer::kerning`] gives them for an unshaped run).
     ///
     /// Separate from [`TextMeasurer::measure`] rather than a branch inside it,
@@ -217,6 +218,7 @@ impl<'r> TextMeasurer<'r> {
             self.pair_kerning(&typeface).and_then(|table| {
                 let starts = unit_starts(text);
                 let size = f32::from(font_props.size);
+                let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
                 let mut pairs = vec![0.0f32; starts.len()];
                 let mut any = false;
                 for w in run.glyphs.windows(2) {
@@ -228,7 +230,18 @@ impl<'r> TextMeasurer<'r> {
                     let Some(slot) = unit.checked_sub(1) else {
                         continue;
                     };
-                    let pair = table.pair_at(w[0].id, w[1].id, size) * font_props.text_scale;
+                    // Word kerns the characters either side of the boundary,
+                    // not the glyphs: a ligature by the last character it draws
+                    // on its left and its first on its right (`render::kern`).
+                    let (Some(left), Some(right)) = (
+                        text.get(w[0].cluster..w[1].cluster)
+                            .and_then(|s| s.chars().last()),
+                        text.get(w[1].cluster..).and_then(|s| s.chars().next()),
+                    ) else {
+                        continue;
+                    };
+                    let pair =
+                        table.pair_at(glyph(left), glyph(right), size) * font_props.text_scale;
                     if pair != 0.0 {
                         pairs[slot] += pair;
                         any = true;

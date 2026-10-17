@@ -35,7 +35,9 @@
 //!    (`test-files/ligatures-*.docx`). Such a run is shaped with exactly the
 //!    classes it asks for and HarfBuzz's own kerning and contextual
 //!    alternates off (`TypographicFeatures::settings`), and kerned on top from
-//!    the font's pair kerning between the glyphs that leaves.
+//!    the font's pair kerning between the glyphs that leaves, looked up by the
+//!    letters either side of each — a ligature's first and last
+//!    (`render::kern`).
 //!
 //! # What this costs the rest of the corpus
 //!
