@@ -92,6 +92,7 @@ pub fn stack_blocks(
     let mut cursor_y = Pt::ZERO;
     let mut prev_space_after = Pt::ZERO;
     let mut prev_style_id: Option<crate::model::StyleId> = None;
+    let mut prev_contextual = false;
     let mut page_floats: Vec<float::ActiveFloat> = Vec::new();
     // §17.4.1 row-split model: one entry per fitted line, plus a flag that a
     // block was encountered which makes the whole cell unsafe to bisect
@@ -112,15 +113,12 @@ pub fn stack_blocks(
                 let mut effective_style = style.clone_for_layout();
 
                 // §17.3.1.9: spacing collapse.
-                if effective_style.contextual_spacing
-                    && effective_style.style_id.is_some()
-                    && effective_style.style_id == prev_style_id
-                {
-                    cursor_y -= prev_space_after + effective_style.space_before;
-                } else {
-                    let collapse = prev_space_after.min(effective_style.space_before);
-                    cursor_y -= collapse;
-                }
+                cursor_y -= super::helpers::collapsed_spacing(
+                    prev_space_after,
+                    prev_contextual,
+                    prev_style_id.as_ref(),
+                    &effective_style,
+                );
 
                 // Register floating images.
                 let content_top = cursor_y + effective_style.space_before;
@@ -376,6 +374,7 @@ pub fn stack_blocks(
 
                 prev_space_after = effective_style.space_after;
                 prev_style_id = effective_style.style_id.clone();
+                prev_contextual = effective_style.contextual_spacing;
             }
             LayoutBlock::Table {
                 rows,
@@ -391,6 +390,15 @@ pub fn stack_blocks(
                 // enclosing cell must move whole (matches `build_row_groups`,
                 // which marks rows with nested tables non-splittable).
                 splittable = false;
+                // §17.3.1.9: as in the body (`layout_section`).
+                if super::helpers::drops_space_after_before_table(
+                    prev_contextual,
+                    prev_style_id.as_ref(),
+                    rows,
+                ) && cursor_y - prev_space_after >= Pt::ZERO
+                {
+                    cursor_y -= prev_space_after;
+                }
                 // stack_blocks is used for table cells and header/footer —
                 // no adjacent table collapse in these contexts.
                 let table = layout_table(
@@ -430,6 +438,7 @@ pub fn stack_blocks(
                 cursor_y += table.size.height;
                 prev_space_after = Pt::ZERO;
                 prev_style_id = None;
+                prev_contextual = false;
             }
         }
     }

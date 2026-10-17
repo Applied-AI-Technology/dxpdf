@@ -18,7 +18,8 @@ use super::floating_table::{
     FloatingTablePagePlacement,
 };
 use super::helpers::{
-    render_page_footnotes, split_at_column_breaks, split_at_page_breaks, table_x_offset,
+    collapsed_spacing, drops_space_after_before_table, render_page_footnotes,
+    split_at_column_breaks, split_at_page_breaks, table_x_offset,
 };
 use super::types::{
     ContinuationState, FloatingImage, FloatingShape, LayoutBlock, PageParity, WrapMode,
@@ -107,6 +108,9 @@ struct PageLayoutState<'doc> {
     prev_space_after: Pt,
     /// §17.3.1.9: style_id of the previous paragraph for contextual spacing.
     prev_style_id: Option<StyleId>,
+    /// §17.3.1.9: whether that paragraph's own `contextualSpacing` drops its
+    /// space after before a paragraph of its style.
+    prev_contextual: bool,
     /// §17.3.1.24: borders of the previous paragraph for border grouping.
     prev_borders: Option<ParagraphBorderStyle>,
     /// Active floats on the current page (text wraps around these).
@@ -177,6 +181,7 @@ impl<'doc> PageLayoutState<'doc> {
                 first_on_section_page: false,
                 prev_space_after: c.prev_space_after,
                 prev_style_id: c.prev_style_id,
+                prev_contextual: c.prev_contextual,
                 prev_borders: c.prev_borders,
                 page_floats: c.page_floats,
                 current_page_abs_floats: Vec::new(),
@@ -202,6 +207,7 @@ impl<'doc> PageLayoutState<'doc> {
                 first_on_section_page: true,
                 prev_space_after: Pt::ZERO,
                 prev_style_id: None,
+                prev_contextual: false,
                 prev_borders: None,
                 page_floats: Vec::new(),
                 current_page_abs_floats: Vec::new(),
@@ -384,6 +390,7 @@ impl<'doc> PageLayoutState<'doc> {
                         page_floats: self.page_floats,
                         prev_space_after: self.prev_space_after,
                         prev_style_id: self.prev_style_id,
+                        prev_contextual: self.prev_contextual,
                         prev_borders: self.prev_borders,
                         prev_table_style_id: self.prev_table_style_id,
                         pending_page_break: self.pending_page_break,
@@ -549,6 +556,7 @@ struct PageReplayCheckpoint<'doc> {
     first_on_section_page: bool,
     prev_space_after: Pt,
     prev_style_id: Option<StyleId>,
+    prev_contextual: bool,
     prev_borders: Option<ParagraphBorderStyle>,
     page_floats: Vec<float::ActiveFloat>,
     current_page_abs_floats: Vec<float::ActiveFloat>,
@@ -574,6 +582,7 @@ impl<'doc> PageReplayCheckpoint<'doc> {
             first_on_section_page: state.first_on_section_page,
             prev_space_after: state.prev_space_after,
             prev_style_id: state.prev_style_id.clone(),
+            prev_contextual: state.prev_contextual,
             prev_borders: state.prev_borders.clone(),
             page_floats: state.page_floats.clone(),
             current_page_abs_floats: state.current_page_abs_floats.clone(),
@@ -598,6 +607,7 @@ impl<'doc> PageReplayCheckpoint<'doc> {
         state.first_on_section_page = self.first_on_section_page;
         state.prev_space_after = self.prev_space_after;
         state.prev_style_id.clone_from(&self.prev_style_id);
+        state.prev_contextual = self.prev_contextual;
         state.prev_borders.clone_from(&self.prev_borders);
         state.page_floats.clone_from(&self.page_floats);
         state
@@ -1079,6 +1089,7 @@ fn measure_keep_next_group(
     };
     let mut previous_space_after = Pt::ZERO;
     let mut previous_style_id = None;
+    let mut previous_contextual = false;
     let mut index = start;
 
     while let Some(block) = blocks.get(index) {
@@ -1100,14 +1111,12 @@ fn measure_keep_next_group(
                 if breaks_page && fragments.is_empty() {
                     return Some(measurement);
                 }
-                let collapsed = if effective.contextual_spacing
-                    && effective.style_id.is_some()
-                    && effective.style_id == previous_style_id
-                {
-                    previous_space_after + effective.space_before
-                } else {
-                    previous_space_after.min(effective.space_before)
-                };
+                let collapsed = collapsed_spacing(
+                    previous_space_after,
+                    previous_contextual,
+                    previous_style_id.as_ref(),
+                    &effective,
+                );
                 let placed = place_paragraph(
                     fragments,
                     constraints,
@@ -1147,6 +1156,7 @@ fn measure_keep_next_group(
                 }
                 previous_space_after = effective.space_after;
                 previous_style_id = effective.style_id.clone();
+                previous_contextual = effective.contextual_spacing;
                 if closes {
                     return Some(measurement);
                 }
@@ -1918,15 +1928,14 @@ pub(crate) fn layout_section_with_clearance(
                         let current_group_height =
                             group.total_height(!state.page_footnotes.is_empty());
                         let current_group_top = match &blocks[block_idx] {
-                            LayoutBlock::Paragraph { style, .. }
-                                if style.contextual_spacing
-                                    && style.style_id.is_some()
-                                    && style.style_id == state.prev_style_id =>
-                            {
-                                state.cursor_y - state.prev_space_after - style.space_before
-                            }
                             LayoutBlock::Paragraph { style, .. } => {
-                                state.cursor_y - state.prev_space_after.min(style.space_before)
+                                state.cursor_y
+                                    - collapsed_spacing(
+                                        state.prev_space_after,
+                                        state.prev_contextual,
+                                        state.prev_style_id.as_ref(),
+                                        style,
+                                    )
                             }
                             LayoutBlock::Table { .. } => state.cursor_y,
                         };
@@ -2030,15 +2039,12 @@ pub(crate) fn layout_section_with_clearance(
                     }
                 }
                 // §17.3.1.9: spacing collapse (must happen before float registration).
-                if effective_style.contextual_spacing
-                    && effective_style.style_id.is_some()
-                    && effective_style.style_id == state.prev_style_id
-                {
-                    state.cursor_y -= state.prev_space_after + effective_style.space_before;
-                } else {
-                    let collapse = state.prev_space_after.min(effective_style.space_before);
-                    state.cursor_y -= collapse;
-                }
+                state.cursor_y -= collapsed_spacing(
+                    state.prev_space_after,
+                    state.prev_contextual,
+                    state.prev_style_id.as_ref(),
+                    &effective_style,
+                );
 
                 // Register floating images (both relative and absolute).
                 // §20.4.2.18: wrapTopAndBottom images are emitted immediately
@@ -2392,6 +2398,7 @@ pub(crate) fn layout_section_with_clearance(
                 state.prev_borders = style.borders.clone();
                 state.prev_space_after = effective_style.space_after;
                 state.prev_style_id = effective_style.style_id.clone();
+                state.prev_contextual = effective_style.contextual_spacing;
                 state.prev_table_style_id = None; // paragraph breaks adjacent table chain
 
                 // §20.4.2.3: emit non-wrapTopAndBottom floating images.
@@ -2459,6 +2466,19 @@ pub(crate) fn layout_section_with_clearance(
                 float_info,
                 style_id,
             } => {
+                // §17.3.1.9: a paragraph's contextualSpacing reaches across into
+                // a table that opens with a paragraph of its style.
+                if float_info.is_none()
+                    && drops_space_after_before_table(
+                        state.prev_contextual,
+                        state.prev_style_id.as_ref(),
+                        rows,
+                    )
+                    && state.cursor_y - state.prev_space_after >= state.column_top
+                {
+                    state.cursor_y -= state.prev_space_after;
+                    state.prev_space_after = Pt::ZERO;
+                }
                 // §17.4.1 over §17.6.6: the table's own direction where it
                 // declares one, the section's otherwise. Both spellings say
                 // which margin is *leading*, and a document may carry either

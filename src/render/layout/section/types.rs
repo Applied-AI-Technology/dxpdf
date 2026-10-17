@@ -445,6 +445,7 @@ pub struct ContinuationState {
     /// spacing collapses across it.
     pub prev_space_after: Pt,
     pub prev_style_id: Option<StyleId>,
+    pub prev_contextual: bool,
     pub prev_borders: Option<ParagraphBorderStyle>,
     /// §17.4.38: for adjacent-table border collapse across the break.
     pub prev_table_style_id: Option<StyleId>,

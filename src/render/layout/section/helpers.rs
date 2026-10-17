@@ -26,6 +26,58 @@ fn split_at_breaks(fragments: &[Fragment], is_break: fn(&Fragment) -> bool) -> V
     chunks
 }
 
+/// §17.3.1.9: how much of the space between two paragraphs collapses — the
+/// amount to take back from the first one's `space_after` plus the second's
+/// `space_before`, both of which the cursor has already been given.
+///
+/// The larger of the two separates them, except that a paragraph with
+/// `contextualSpacing` drops its own space on the side facing a paragraph of
+/// its style: its `space_after` below one, its `space_before` above one. Each
+/// paragraph's own flag decides for its own space; the neighbour needs only
+/// the same style. Measured against `test-files/border-margin-room.docx` P1-P3:
+/// two `contextualSpacing` paragraphs lose the 1pt between them, and so does
+/// the second before a same-styled paragraph without the flag. A paragraph
+/// with no `pStyle` carries the default paragraph style's id (`build::block`),
+/// so two of them match.
+pub(super) fn collapsed_spacing(
+    prev_space_after: Pt,
+    prev_contextual: bool,
+    prev_style_id: Option<&crate::model::StyleId>,
+    style: &ParagraphStyle,
+) -> Pt {
+    let same_style = style.style_id.is_some() && style.style_id.as_ref() == prev_style_id;
+    let after = if prev_contextual && same_style {
+        Pt::ZERO
+    } else {
+        prev_space_after
+    };
+    let before = if style.contextual_spacing && same_style {
+        Pt::ZERO
+    } else {
+        style.space_before
+    };
+    prev_space_after + style.space_before - after.max(before)
+}
+
+/// §17.3.1.9: whether a paragraph's `contextualSpacing` drops its space after
+/// above this table — when the table's first cell opens with a paragraph of
+/// the same style, flagged or not (`border-margin-room.docx` K20, L20).
+pub(super) fn drops_space_after_before_table(
+    prev_contextual: bool,
+    prev_style_id: Option<&crate::model::StyleId>,
+    rows: &[crate::render::layout::table::TableRowInput],
+) -> bool {
+    let first_style = rows
+        .first()
+        .and_then(|r| r.cells.first())
+        .and_then(|c| c.blocks.first())
+        .and_then(|b| match b {
+            super::LayoutBlock::Paragraph { style, .. } => style.style_id.as_ref(),
+            super::LayoutBlock::Table { .. } => None,
+        });
+    prev_contextual && prev_style_id.is_some() && first_style == prev_style_id
+}
+
 /// Split a fragment slice at `Fragment::ColumnBreak` markers.
 /// Returns a vec of slices; the column break fragments themselves are excluded.
 pub(super) fn split_at_column_breaks(fragments: &[Fragment]) -> Vec<&[Fragment]> {

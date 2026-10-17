@@ -276,7 +276,12 @@ pub(super) fn build_paragraph_block(
         super::convert::paragraph_locale(p, ctx.resolved),
         outline,
     );
-    style.style_id = p.style_id.clone();
+    // §17.3.1.9: a paragraph with no `pStyle` is in the default paragraph
+    // style, and matches another that names it or names none.
+    style.style_id = p
+        .style_id
+        .clone()
+        .or_else(|| ctx.resolved.default_paragraph_style_id.clone());
 
     // Attach pending drop cap to this paragraph.
     if let Some(dc) = pending_dropcap.take() {
