@@ -240,10 +240,16 @@ impl From<StylesXml> for StyleSheet {
 }
 
 /// The paragraph defaults Word supplies when a styles part has no
-/// `w:pPrDefault`: 8pt after and 1.15 lines, §17.7.2 leaving them to the
-/// application. Word draws `test-files/paragraph-defaults-none.docx` with them —
-/// with or without a `settings.xml` naming a compatibility mode — and a
-/// paragraph's own `w:spacing` replaces them attribute by attribute.
+/// `w:pPrDefault`: 8pt after and Auto lines of 278/240, §17.7.2 leaving them
+/// to the application. Word draws `test-files/paragraph-defaults-none.docx`
+/// with them — with or without a `settings.xml` naming a compatibility mode —
+/// and a paragraph's own `w:spacing` replaces them attribute by attribute.
+///
+/// The line is not 1.15. In `test-files/line-default.docx` a paragraph stating
+/// nothing steps exactly as one stating `w:line="278"` and further than one
+/// stating 276, in Calibri at 8–20pt and in Arial, so it is a multiple of the
+/// face's own height like any other — 0.1pt a line more than 1.15 at 10pt,
+/// which over albanyny's CivicRecordCertificate adds up to 2.3pt.
 ///
 /// A `pPrDefault` with no `w:pPr` is read as stating nothing, so §17.3.1.33's
 /// no space and single spacing; no Word render has asked what Word does there.
@@ -251,7 +257,7 @@ fn absent_paragraph_defaults() -> ParagraphProperties {
     ParagraphProperties {
         spacing: Dup::from(Some(ParagraphSpacing {
             after: Some(Dimension::new(160)),
-            line: Some(LineSpacing::Auto(Dimension::new(276))),
+            line: Some(LineSpacing::Auto(Dimension::new(278))),
             ..ParagraphSpacing::default()
         })),
         ..ParagraphProperties::default()

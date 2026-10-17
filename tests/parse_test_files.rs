@@ -465,6 +465,8 @@ const ALL_FILES: &[&str] = &[
     "border-margin-room.docx",
     "paragraph-border-room.docx",
     "autofit-columns.docx",
+    "line-default.docx",
+    "line-grid.docx",
 ];
 
 #[test]
