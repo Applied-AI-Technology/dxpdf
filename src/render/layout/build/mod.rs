@@ -122,7 +122,7 @@ pub fn build_section_blocks(
     state: &mut BuildState,
 ) -> BuiltSection {
     let mut pending_dropcap: Option<crate::render::layout::paragraph::DropCapInfo> = None;
-    let blocks: Vec<LayoutBlock> = section
+    let mut blocks: Vec<LayoutBlock> = section
         .blocks
         .iter()
         .filter_map(|block| {
@@ -135,8 +135,46 @@ pub fn build_section_blocks(
             )
         })
         .collect();
+    group_paragraph_borders(&mut blocks);
 
     BuiltSection { blocks }
+}
+
+/// §17.3.1.24: paragraphs in a row with the same border settings are one
+/// bordered group — the top border above the first of them, the bottom one
+/// below the last, and neither between. Each member keeps the sides; the top
+/// and bottom are taken from every member but the first and the last.
+///
+/// The settings compared are the borders as the cascade left them, before
+/// any member lost an edge here. A table or any other block between two
+/// paragraphs ends the group. holdenma's notices run their instructions
+/// through paragraphs that each declare the same 0.75pt bottom border, and
+/// Word draws one line under the last of them.
+pub(super) fn group_paragraph_borders(blocks: &mut [LayoutBlock]) {
+    let declared: Vec<Option<crate::render::layout::paragraph::ParagraphBorderStyle>> = blocks
+        .iter()
+        .map(|b| match b {
+            LayoutBlock::Paragraph { style, .. } => style.borders.clone(),
+            LayoutBlock::Table { .. } => None,
+        })
+        .collect();
+    for i in 0..blocks.len() {
+        let Some(own) = &declared[i] else { continue };
+        let joins_previous = i > 0 && declared[i - 1].as_ref() == Some(own);
+        let joins_next = declared
+            .get(i + 1)
+            .is_some_and(|next| next.as_ref() == Some(own));
+        if let LayoutBlock::Paragraph { style, .. } = &mut blocks[i] {
+            if let Some(borders) = style.borders.as_mut() {
+                if joins_previous {
+                    borders.top = None;
+                }
+                if joins_next {
+                    borders.bottom = None;
+                }
+            }
+        }
+    }
 }
 
 /// §17.11.2: build the document's endnote content, rendered once at the end of
@@ -356,6 +394,7 @@ fn build_non_story_content(
         }
     }
 
+    group_paragraph_borders(&mut layout_blocks);
     HeaderFooterContent {
         blocks: layout_blocks,
         absolute_position,
@@ -477,6 +516,56 @@ mod tests {
             }
         };
         assert!(line_of(16) < line_of(40));
+    }
+
+    /// §17.3.1.24: a run of paragraphs with the same borders is one box, so
+    /// the top survives on its first member and the bottom on its last; a
+    /// paragraph whose borders differ starts a box of its own.
+    #[test]
+    fn paragraphs_with_the_same_borders_share_one_box() {
+        use crate::render::layout::paragraph::{BorderLine, ParagraphBorderStyle};
+        let line = |width: f32| BorderLine {
+            width: Pt::new(width),
+            color: crate::render::resolve::color::RgbColor::BLACK,
+            space: Pt::new(1.0),
+        };
+        let bordered = |width: f32| LayoutBlock::Paragraph {
+            fragments: vec![],
+            style: crate::render::layout::paragraph::ParagraphStyle {
+                borders: Some(ParagraphBorderStyle {
+                    top: Some(line(width)),
+                    bottom: Some(line(width)),
+                    left: None,
+                    right: None,
+                }),
+                ..Default::default()
+            },
+            page_break_before: false,
+            footnotes: vec![],
+            floating_images: vec![],
+            floating_shapes: vec![],
+        };
+        let mut blocks = vec![
+            bordered(0.75),
+            bordered(0.75),
+            bordered(0.75),
+            bordered(3.0),
+        ];
+        group_paragraph_borders(&mut blocks);
+        let edges: Vec<(bool, bool)> = blocks
+            .iter()
+            .map(|b| match b {
+                LayoutBlock::Paragraph { style, .. } => {
+                    let borders = style.borders.as_ref().expect("borders kept");
+                    (borders.top.is_some(), borders.bottom.is_some())
+                }
+                LayoutBlock::Table { .. } => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            edges,
+            [(true, false), (false, false), (false, true), (true, true)]
+        );
     }
 
     // ── §17.6.22 speculative build (plan §1) ────────────────────────────────

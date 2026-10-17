@@ -1814,6 +1814,7 @@ fn build_cell_blocks(
         }
     }
 
+    super::group_paragraph_borders(&mut blocks);
     (blocks, nested_min)
 }
 
