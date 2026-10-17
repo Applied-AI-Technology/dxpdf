@@ -19,6 +19,10 @@ Word's announcement-letter template answers the 11pt Symbol case already: each
 bullet line is 16.08pt where a plain Calibri line is 15.36–15.60pt, Symbol's
 ascent (2059 of 2048 units, above Calibri's 1950) over Calibri's descent.
 
+Measured in Word (Word for Mac 16, PDF export, 2026-10-16), reference to
+reference: R0-R1 62.88pt, R1-R2 42.48pt, R2-R3 40.32pt, R3-R4 30.96pt. The
+label reaches its own unscaled height; Auto spacing scales only the text.
+
 Regenerate and commit the result if the content changes; the build is
 deterministic and needs no third-party packages.
 
