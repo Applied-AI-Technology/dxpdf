@@ -463,6 +463,7 @@ const ALL_FILES: &[&str] = &[
     "hanging-tab-legacy-15.docx",
     "split-row-valign.docx",
     "border-margin-room.docx",
+    "paragraph-border-room.docx",
     "autofit-columns.docx",
 ];
 

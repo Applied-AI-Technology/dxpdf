@@ -411,7 +411,7 @@ impl PlacedParagraph<'_> {
     /// next paragraph's `space_before` (§17.3.1.9).
     pub(crate) fn emit_full(&self) -> ParagraphLayout {
         let mut commands = Vec::new();
-        let mut cursor_y = self.style.space_before;
+        let mut cursor_y = self.style.space_before + self.style.top_border_room();
 
         self.emit_drop_cap(&mut commands);
 
@@ -446,15 +446,10 @@ impl PlacedParagraph<'_> {
         }
     }
 
-    /// §17.3.1.24: bottom border space this paragraph adds after its last line —
+    /// §17.3.1.24: the room the bottom border takes after the last line —
     /// charged, with `space_after`, only on the final segment.
     pub(crate) fn bottom_border_space(&self) -> Pt {
-        self.style
-            .borders
-            .as_ref()
-            .and_then(|b| b.bottom.as_ref())
-            .map(|b| b.space)
-            .unwrap_or(Pt::ZERO)
+        self.style.bottom_border_room()
     }
 
     /// Emit lines `[first, last)` of a splittable paragraph as one page segment.
@@ -480,9 +475,10 @@ impl PlacedParagraph<'_> {
             self.line_placements.len()
         );
         let mut commands = Vec::new();
-        // §17.3.1.33: only the first segment carries the paragraph's space_before.
+        // §17.3.1.33: only the first segment carries the paragraph's
+        // space_before, and the top border below it.
         let mut cursor_y = if is_first_segment {
-            self.style.space_before
+            self.style.space_before + self.style.top_border_room()
         } else {
             Pt::ZERO
         };
@@ -1794,11 +1790,14 @@ mod tests {
             "last: bottom + sides"
         );
 
-        // The first segment's horizontal edge sits above its text (the top
-        // border, with border space above space_before); the last segment's sits
-        // below its two lines (the bottom border).
-        assert!(horizontal_line_y(&head.commands).unwrap() < 0.0);
-        assert!(horizontal_line_y(&tail.commands).unwrap() > 28.0);
+        // The top border takes its 2pt space and 1pt width above the first
+        // line, its centre half a width in; the bottom one the same below the
+        // last line. Each end segment is its two 14pt lines and that 3pt.
+        assert_eq!(horizontal_line_y(&head.commands), Some(0.5));
+        assert_eq!(head.size.height.raw(), 31.0);
+        assert_eq!(horizontal_line_y(&tail.commands), Some(30.5));
+        assert_eq!(tail.size.height.raw(), 31.0);
+        assert_eq!(mid.size.height.raw(), 28.0);
     }
 
     #[test]

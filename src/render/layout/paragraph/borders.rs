@@ -86,31 +86,24 @@ pub(super) fn emit_segment_borders_and_shading(
 ) -> Pt {
     let draw_top = edges.draw_top();
     let draw_bottom = edges.draw_bottom();
-    // §17.3.1.24: the border `space` is the distance between the border line and
-    // the text content; top/bottom border space expands the box vertically.
-    let border_space_top = style
-        .borders
-        .as_ref()
-        .and_then(|b| b.top.as_ref())
-        .map(|b| b.space)
-        .unwrap_or(Pt::ZERO);
-    let border_space_bottom = style
-        .borders
-        .as_ref()
-        .and_then(|b| b.bottom.as_ref())
-        .map(|b| b.space)
-        .unwrap_or(Pt::ZERO);
+    // §17.3.1.24: a top or bottom border stands its `space` off the text and
+    // takes its own width beyond that (`BorderLine::room`); the first line was
+    // set below the top one's room, and the cursor leaves the bottom one's.
+    // The box runs between the two lines' centres.
+    let half = |line: Option<&super::types::BorderLine>| line.map_or(Pt::ZERO, |l| l.width * 0.5);
+    let top_line = style.borders.as_ref().and_then(|b| b.top.as_ref());
+    let bottom_line = style.borders.as_ref().and_then(|b| b.bottom.as_ref());
     let para_left = style.indent_left;
     let para_right = constraints.max_width - style.indent_right;
-    // The box top sits above the first line by the top border space on the first
-    // segment; a continuation segment's box starts flush at the segment top.
+    // On the first segment the box top is the top line's centre, right under
+    // the space above; a continuation segment's box starts flush at its top.
     let box_top = if draw_top {
-        style.space_before - border_space_top
+        style.space_before + half(top_line)
     } else {
         Pt::ZERO
     };
     let box_bottom = if draw_bottom {
-        content_bottom + border_space_bottom
+        content_bottom + style.bottom_border_room() - half(bottom_line)
     } else {
         content_bottom
     };
@@ -191,7 +184,7 @@ pub(super) fn emit_segment_borders_and_shading(
     // space_after (§17.3.1.33).
     let mut cursor_y = content_bottom;
     if draw_bottom {
-        cursor_y = content_bottom + border_space_bottom + style.space_after;
+        cursor_y = content_bottom + style.bottom_border_room() + style.space_after;
     }
 
     // If no lines, still consume default height + spacing (whole-paragraph path).
@@ -203,7 +196,11 @@ pub(super) fn emit_segment_borders_and_shading(
             &style.line_spacing,
             style.auto_fit,
         );
-        cursor_y = style.space_before + line_h + style.space_after;
+        cursor_y = style.space_before
+            + style.top_border_room()
+            + line_h
+            + style.bottom_border_room()
+            + style.space_after;
     }
 
     cursor_y

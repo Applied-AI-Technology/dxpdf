@@ -139,6 +139,17 @@ pub struct BorderLine {
     pub space: Pt,
 }
 
+impl BorderLine {
+    /// §17.3.1.42/§17.3.1.7: how far a top or bottom border moves what is
+    /// beyond it — the space between line and text, and the line itself.
+    /// Measured against `test-files/paragraph-border-room.docx`: a 0.75pt or
+    /// 3pt border with 0 or 3pt of space takes exactly the two together,
+    /// above the text and below it alike.
+    pub(crate) fn room(&self) -> Pt {
+        self.space + self.width
+    }
+}
+
 /// Drop cap letter to float at the start of a paragraph.
 #[derive(Clone, Debug)]
 pub struct DropCapInfo {
@@ -165,6 +176,22 @@ pub struct DropCapInfo {
 }
 
 impl ParagraphStyle {
+    /// The room the top border takes above the first line ([`BorderLine::room`]).
+    pub(crate) fn top_border_room(&self) -> Pt {
+        self.borders
+            .as_ref()
+            .and_then(|b| b.top.as_ref())
+            .map_or(Pt::ZERO, BorderLine::room)
+    }
+
+    /// The room the bottom border takes below the last line.
+    pub(crate) fn bottom_border_room(&self) -> Pt {
+        self.borders
+            .as_ref()
+            .and_then(|b| b.bottom.as_ref())
+            .map_or(Pt::ZERO, BorderLine::room)
+    }
+
     /// Clone the style for layout, leaving `page_floats` empty.
     ///
     /// The caller always replaces `page_floats` with computed effective floats,

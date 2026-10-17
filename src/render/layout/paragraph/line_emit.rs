@@ -71,7 +71,7 @@ pub(super) fn compute_line_placements(
     // Active floats — fit one line at a time so available width can change.
     let mut placements = Vec::new();
     let mut frag_idx = 0;
-    let mut line_y = style.space_before;
+    let mut line_y = style.space_before + style.top_border_room();
 
     while frag_idx < fragments.len() {
         let abs_y = style.page_y + line_y;
