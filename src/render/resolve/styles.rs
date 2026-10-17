@@ -153,7 +153,17 @@ fn resolve_one(
     // properties do, so there is no later cascade level that would ever need
     // to override a doc-default run property — the conflict this exclusion
     // exists to avoid, above, simply doesn't arise for runs.
-    if style.style_type != crate::model::StyleType::Character {
+    //
+    // Table styles are the exception: their run properties *are* such a level,
+    // overriding the paragraph style's in a cell (`build_fragments`), so a doc
+    // default folded in here would masquerade as the table style's own. The
+    // tenant DonationReports' `TableGrid` declares no font size over a 22
+    // half-point `docDefaults` and a 20 half-point `Normal`, and Word sets its
+    // cells at 10pt.
+    if !matches!(
+        style.style_type,
+        crate::model::StyleType::Character | crate::model::StyleType::Table
+    ) {
         merge_run_properties(&mut run, &sheet.doc_defaults_run);
     }
 

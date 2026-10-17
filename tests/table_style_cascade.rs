@@ -1225,3 +1225,60 @@ fn a_direct_property_still_beats_the_default_table_style() {
         "the table's own 720-twip left inset wins over the default's 108"
     );
 }
+
+/// Every text run's font size, in draw order.
+fn text_sizes(pages: &[LayoutedPage]) -> Vec<f32> {
+    pages
+        .iter()
+        .flat_map(|p| &p.commands)
+        .filter_map(|c| match c {
+            DrawCommand::Text { font_size, .. } => Some(font_size.raw()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A stylesheet whose `docDefaults` set 11pt and whose default paragraph style
+/// sets 10pt, with `TestTbl` carrying `style_body`.
+fn styles_over_normal(style_body: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults>
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/><w:rPr><w:sz w:val="20"/></w:rPr>
+  </w:style>
+  <w:style w:type="table" w:styleId="TestTbl">
+    <w:name w:val="Test Table"/>
+    {style_body}
+  </w:style>
+</w:styles>"#
+    )
+}
+
+/// §17.7.2: a table style's run properties override the paragraph style's in its
+/// cells — but only those it declares. A `docDefaults` font size is not the
+/// table style's, and must not override `Normal` from inside it: the tenant
+/// DonationReports' `TableGrid` declares no size over a 22 half-point
+/// `docDefaults` and a 20 half-point `Normal`, and Word sets the cells at 10pt.
+/// The control is the same table style declaring 14pt, which does override.
+#[test]
+fn a_doc_default_size_does_not_override_normal_through_a_table_style() {
+    let silent = layout(&table_document(""), &styles_over_normal(""));
+    assert!(
+        text_sizes(&silent).iter().all(|s| (s - 10.0).abs() < 0.01),
+        "cells under a table style declaring no size: {:?}, expected Normal's 10pt",
+        text_sizes(&silent)
+    );
+    let declaring = layout(
+        &table_document(""),
+        &styles_over_normal(r#"<w:rPr><w:sz w:val="28"/></w:rPr>"#),
+    );
+    assert!(
+        text_sizes(&declaring)
+            .iter()
+            .all(|s| (s - 14.0).abs() < 0.01),
+        "cells under a table style declaring 14pt: {:?}",
+        text_sizes(&declaring)
+    );
+}
