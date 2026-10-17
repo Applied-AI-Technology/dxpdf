@@ -2874,6 +2874,51 @@ mod tests {
         assert!(per_page[1].iter().any(|text| text == "forced"));
     }
 
+    /// A keepNext paragraph before one that is a page break alone — the
+    /// ShellfishDailyCashReport's report ends. The break paragraph puts only its
+    /// mark line on the page, and a page's last paragraph need not fit its
+    /// space after (issue #126), so the pair fits the 38pt left: 14 + 14, with
+    /// the break's 12pt after allowed past the bottom. Charged that space, or
+    /// a line for the break itself, the heading moved and stranded a page.
+    #[test]
+    fn keep_next_before_a_page_break_paragraph_is_measured_as_placed() {
+        let mut blocks: Vec<LayoutBlock> =
+            (0..3).map(|i| para_block(&format!("f{i}"), 30.0)).collect();
+        blocks.push(styled_para_block("heading", true, false));
+        blocks.push(LayoutBlock::Paragraph {
+            fragments: vec![
+                Fragment::LineBreak {
+                    line_height: Pt::new(14.0),
+                    origin: crate::render::layout::fragment::LineBreakOrigin::ParagraphMark,
+                },
+                Fragment::PageBreak {
+                    line_height: Pt::new(14.0),
+                },
+            ],
+            style: ParagraphStyle {
+                space_after: Pt::new(12.0),
+                ..Default::default()
+            },
+            page_break_before: false,
+            footnotes: vec![],
+            floating_images: vec![],
+            floating_shapes: vec![],
+        });
+        blocks.push(para_block("after", 30.0));
+        let pages = layout_section(
+            &blocks,
+            &small_config(),
+            None,
+            Pt::ZERO,
+            Pt::new(14.0),
+            None,
+        );
+        let per_page = texts_per_page(&pages);
+        assert_eq!(per_page.len(), 2, "{per_page:?}");
+        assert!(per_page[0].iter().any(|t| t == "heading"), "{per_page:?}");
+        assert!(per_page[1].iter().any(|t| t == "after"), "{per_page:?}");
+    }
+
     #[test]
     fn oversized_keep_next_chain_makes_progress_without_duplicates() {
         let mut blocks = Vec::new();

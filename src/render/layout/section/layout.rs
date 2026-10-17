@@ -1046,8 +1046,19 @@ impl KeepNextGroupMeasurement {
 /// the call site is made once against a single number rather than re-measured
 /// per candidate. The group ends at the first block that is a table, or a
 /// paragraph that is not itself keepNext (its `page_break_before` already
-/// having been checked at the previous iteration); `None` if a
-/// `pageBreakBefore` interrupts the chain before it can close.
+/// having been checked at the previous iteration), or at a paragraph's first
+/// `<w:br w:type="page"/>`; `None` if a `pageBreakBefore` interrupts the chain
+/// before it can close.
+///
+/// The closing paragraph is measured as placement fits a page's last one, so
+/// the group fits wherever its blocks placed one by one would. §17.3.3.1: what
+/// follows a page break is on the next page whatever the chain wants, so a
+/// paragraph holding one counts only what comes before it — the chunk
+/// placement puts on this page — and closes the group. Greenwich's
+/// ShellfishDailyCashReport ends each report with a `keepNext` paragraph
+/// before one that is a page break alone, whose mark line stays on the page;
+/// charged its 8pt space after as well, the pair missed the page by 6.6pt,
+/// moved, and Word's three pages came out four.
 ///
 /// An oversized group that fits on neither the current nor a fresh page falls
 /// through to ordinary in-line placement at the call site rather than being
@@ -1083,6 +1094,12 @@ fn measure_keep_next_group(
                     return None;
                 }
                 let effective = style.clone_for_layout();
+                let page_chunks = split_at_page_breaks(fragments);
+                let breaks_page = page_chunks.len() > 1;
+                let fragments = page_chunks[0];
+                if breaks_page && fragments.is_empty() {
+                    return Some(measurement);
+                }
                 let collapsed = if effective.contextual_spacing
                     && effective.style_id.is_some()
                     && effective.style_id == previous_style_id
@@ -1091,14 +1108,32 @@ fn measure_keep_next_group(
                 } else {
                     previous_space_after.min(effective.space_before)
                 };
-                let layout = layout_paragraph(
+                let placed = place_paragraph(
                     fragments,
                     constraints,
                     &effective,
                     default_line_height,
                     measure_text,
                 );
-                measurement.body_height += layout.size.height - collapsed;
+                // Where the group closes on this paragraph, it ends the page if
+                // anything does, and is charged as placement charges a page's
+                // last paragraph: without its trailing space (issue #126) or
+                // its last line's Auto extra, which hangs past the bottom
+                // unless a bottom border stands below it.
+                let closes = breaks_page || !effective.keep_next;
+                let unfit_tail = if closes {
+                    let hang = match placed.line_count() {
+                        n if n > 0 && placed.bottom_border_space() == Pt::ZERO => {
+                            placed.line_hang(n - 1)
+                        }
+                        _ => Pt::ZERO,
+                    };
+                    effective.space_after + hang
+                } else {
+                    Pt::ZERO
+                };
+                let layout = placed.emit_full();
+                measurement.body_height += layout.size.height - collapsed - unfit_tail;
                 for (footnote_fragments, footnote_style) in footnotes {
                     let footnote = layout_paragraph(
                         footnote_fragments,
@@ -1112,7 +1147,7 @@ fn measure_keep_next_group(
                 }
                 previous_space_after = effective.space_after;
                 previous_style_id = effective.style_id.clone();
-                if !effective.keep_next {
+                if closes {
                     return Some(measurement);
                 }
                 index += 1;
