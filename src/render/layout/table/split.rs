@@ -74,6 +74,12 @@ pub(super) struct SplitCut {
     /// half heights). Each cell's visible box in the first half extends
     /// from the row top to this Y.
     first_half_height: Pt,
+    /// The height the continuation's tallest remainder needs: each cut cell's
+    /// content after its cut, inset by its margins and the borders the
+    /// continuation draws. Cells cut at different depths carry different
+    /// amounts, so the row's height less the deepest cut can fall short of a
+    /// cell that was cut higher up.
+    second_half_height: Pt,
     /// One per cell, in the same order as `row.cells`.
     cells: Vec<CellCut>,
 }
@@ -90,6 +96,7 @@ pub(super) struct SplitCut {
 pub(super) fn find_row_cut(input: &RowCutInput<'_>) -> Option<SplitCut> {
     let mut cells: Vec<CellCut> = Vec::with_capacity(input.row.cells.len());
     let mut first_half_height = Pt::ZERO;
+    let mut second_half_height = Pt::ZERO;
     let mut any_fits = false;
     // Cells that can't be split text-wise (too few baselines or
     // image/shape-only cells) force the row to leave room for their full
@@ -127,6 +134,21 @@ pub(super) fn find_row_cut(input: &RowCutInput<'_>) -> Option<SplitCut> {
                 // Only a real cut moves content on; a cell kept whole does not
                 // make the row shrink, which the continuation loop relies on.
                 any_fits |= matches!(cut, CellCut::CutAt { .. });
+                if let CellCut::CutAt { shift, .. } = cut {
+                    // The continuation's top is the row's top border, or its
+                    // bottom where the top paints nothing (`split_row_at`).
+                    let top = if borders.top.line().is_some() {
+                        borders.top
+                    } else {
+                        borders.bottom
+                    };
+                    let need = (entry.layout.content_height - shift).max(Pt::ZERO)
+                        + cell.margins.top
+                        + cell.margins.bottom
+                        + border_width(top)
+                        + bottom_border;
+                    second_half_height = second_half_height.max(need);
+                }
                 if half_h > first_half_height {
                     first_half_height = half_h;
                 }
@@ -167,6 +189,7 @@ pub(super) fn find_row_cut(input: &RowCutInput<'_>) -> Option<SplitCut> {
     }
     Some(SplitCut {
         first_half_height,
+        second_half_height: second_half_height + input.mr.leading_gap,
         cells,
     })
 }
@@ -313,12 +336,14 @@ pub(super) struct SplitRow {
 /// mid-table rows).
 pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
     let first_h = cut.first_half_height;
-    // The largest shift across cells is the amount of content consumed by
-    // the first half. Whatever's left in the original row height is what
-    // the continuation needs to render (top/bottom margins are already
-    // included in `mr.height`, so no additional padding is needed).
+    // The largest shift across cells is the most content the first half
+    // consumed, and what is left of the row's height after it keeps a row-height
+    // floor on the continuation; a cell cut higher up than the deepest cut has
+    // more left, which `second_half_height` holds.
     let max_shift = cut.cells.iter().map(CellCut::shift).fold(Pt::ZERO, Pt::max);
-    let second_h = (mr.height - max_shift).max(Pt::ZERO);
+    let second_h = (mr.height - max_shift)
+        .max(cut.second_half_height)
+        .max(Pt::ZERO);
 
     let mut first_entries: Vec<CellLayoutEntry> = Vec::with_capacity(mr.entries.len());
     let mut second_entries: Vec<CellLayoutEntry> = Vec::with_capacity(mr.entries.len());
@@ -1204,10 +1229,14 @@ mod tests {
         );
         assert_eq!(texts(&parts.second.entries[0].layout.commands).len(), 2);
         assert_eq!(texts(&parts.second.entries[1].layout.commands).len(), 3);
+        // The row less its deepest cut, 94 - 56 = 38, would clip the margined
+        // cell, which was cut higher and carries three lines: 42pt between its
+        // two 5pt margins. holdenma's renewal notices ended a table 2.3pt early
+        // on page 2 this way.
         assert_eq!(
             parts.second.height,
-            Pt::new(94.0 - 56.0),
-            "the continuation loses the largest shift across the cells"
+            Pt::new(42.0 + 5.0 + 5.0),
+            "the continuation holds its tallest remainder"
         );
     }
 
