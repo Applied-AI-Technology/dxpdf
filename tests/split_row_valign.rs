@@ -37,6 +37,15 @@ fn at(pages: &[LayoutedPage], label: &str) -> (usize, f32) {
     hits[0]
 }
 
+fn assert_level(pages: &[LayoutedPage], a: &str, b: &str, why: &str) {
+    let (pa, ya) = at(pages, a);
+    let (pb, yb) = at(pages, b);
+    assert!(
+        pa == pb && (ya - yb).abs() < 0.01,
+        "{a} at {pa}/{ya}, {b} at {pb}/{yb} — {why}"
+    );
+}
+
 /// The first half holds nine of the left cell's lines; the tenth starts the
 /// next page.
 fn assert_nine_lines(pages: &[LayoutedPage], case: &str) {
@@ -51,4 +60,36 @@ fn the_first_half_charges_its_borders() {
     for case in ["V1", "V2", "V3"] {
         assert_nine_lines(&p, case);
     }
+}
+
+#[test]
+fn a_cell_the_break_leaves_whole_aligns_within_the_first_half() {
+    let p = pages();
+    assert_level(&p, "V1R6", "V1L9", "bottom-aligned on the first page");
+    assert_eq!(at(&p, "V1R1").0, at(&p, "V1L1").0, "all six lines stay");
+}
+
+#[test]
+fn a_cell_the_break_cuts_is_laid_out_top_down() {
+    let p = pages();
+    for case in ["V2", "V3"] {
+        assert_level(
+            &p,
+            &format!("{case}R1"),
+            &format!("{case}L1"),
+            "fills the first half",
+        );
+        assert_level(
+            &p,
+            &format!("{case}R10"),
+            &format!("{case}L10"),
+            "continues at the top",
+        );
+    }
+}
+
+#[test]
+fn a_row_on_one_page_keeps_its_alignment() {
+    let p = pages();
+    assert_level(&p, "V4R2", "V4L4", "bottom-aligned");
 }

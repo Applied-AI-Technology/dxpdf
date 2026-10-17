@@ -312,7 +312,12 @@ fn emit_one_row(
         // merged span (`effective_h`, computed above with the shading).
         let content_h = entry.layout.align_height + cell_input.margins.vertical();
         let slack = (effective_h - content_h - dy_border - dy_bottom).max(Pt::ZERO);
-        let dy_valign = match cell_input.vertical_align {
+        let vertical_align = if entry.broken {
+            CellVAlign::Top
+        } else {
+            cell_input.vertical_align
+        };
+        let dy_valign = match vertical_align {
             CellVAlign::Bottom => slack,
             CellVAlign::Center => slack * 0.5,
             CellVAlign::Top => Pt::ZERO,

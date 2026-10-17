@@ -380,4 +380,10 @@ pub(super) struct CellLayoutEntry {
     /// on the right of every interior vertical was placed as though it had no
     /// border beside it.
     pub(super) content_dx: Pt,
+    /// Whether a page break cuts through this cell's content, so that one half
+    /// of its split row holds part of it and the other the rest. Word lays
+    /// such a cell out top-down on both pages whatever its §17.4.84
+    /// `w:vAlign`, while a cell the break leaves whole keeps its alignment
+    /// within the half that holds it (`test-files/split-row-valign.docx`).
+    pub(super) broken: bool,
 }

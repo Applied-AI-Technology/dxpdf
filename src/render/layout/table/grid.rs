@@ -602,6 +602,7 @@ mod tests {
             cell_w: Pt::new(100.0),
             grid_col,
             content_dx: Pt::ZERO,
+            broken: false,
         }
     }
 

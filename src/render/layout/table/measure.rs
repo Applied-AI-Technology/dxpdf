@@ -332,6 +332,7 @@ pub(super) fn measure_table_rows(
                 cell_x,
                 cell_w,
                 grid_col: grid_idx,
+                broken: false,
             });
             grid_idx += span;
         }

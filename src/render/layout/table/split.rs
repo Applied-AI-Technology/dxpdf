@@ -124,7 +124,9 @@ pub(super) fn find_row_cut(input: &RowCutInput<'_>) -> Option<SplitCut> {
             input.available,
         ) {
             Some((cut, half_h)) => {
-                any_fits = true;
+                // Only a real cut moves content on; a cell kept whole does not
+                // make the row shrink, which the continuation loop relies on.
+                any_fits |= matches!(cut, CellCut::CutAt { .. });
                 if half_h > first_half_height {
                     first_half_height = half_h;
                 }
@@ -177,9 +179,11 @@ pub(super) fn find_row_cut(input: &RowCutInput<'_>) -> Option<SplitCut> {
 /// margins, so the cut edge gets the natural padding Word preserves (variant 2
 /// of the OOXML split-edge options; `w:tcMar` §17.4.68 re-applied at the cut edge).
 ///
-/// Returns `None` when the cell exposes no legal cut point within `available`
-/// (empty/one-line, image/shape-only, keepLines, or every fitting cut would
-/// strand a widow) — the caller then keeps the cell whole on the first half.
+/// A cell whose whole content fits in `available` comes back
+/// [`CellCut::KeepAll`] with its full height. Returns `None` when the cell
+/// does not fit and exposes no legal cut point within `available`
+/// (one-line, image/shape-only, keepLines, or every fitting cut would strand
+/// a widow) — the caller then keeps the cell whole on the first half.
 fn cut_for_cell(
     entry: &CellLayoutEntry,
     margin_top: Pt,
@@ -195,6 +199,12 @@ fn cut_for_cell(
     let budget = available - insets;
     if budget <= Pt::ZERO {
         return None;
+    }
+    // A cell whose content all fits is not cut, though a cut before its last
+    // line would fit too: it stays whole on the first half, as Word keeps
+    // `split-row-valign.docx` V1's six-line cell beside a row cut after nine.
+    if entry.layout.content_height <= budget {
+        return Some((CellCut::KeepAll, entry.layout.content_height + insets));
     }
 
     let cont_top = largest_legal_cut(&entry.layout.lines, budget)?;
@@ -320,6 +330,8 @@ pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
         // iterative loop) re-evaluates §17.3.1.44 widow control against the
         // lines that actually remain.
         let (first_lines, second_lines) = partition_lines(&entry.layout.lines, cc);
+        // A continuation that is cut again is still the same broken cell.
+        let broken = entry.broken || matches!(cc, CellCut::CutAt { .. });
         first_entries.push(CellLayoutEntry {
             // A cell holding an anchored object is never bisected (its cut
             // model is withheld), so neither half has an overlay to align on.
@@ -336,6 +348,7 @@ pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
             // content is inset from its own left edge — the shared vertical is
             // the same line on both pages.
             content_dx: entry.content_dx,
+            broken,
         });
         second_entries.push(CellLayoutEntry {
             layout: crate::render::layout::cell::CellLayout {
@@ -351,6 +364,7 @@ pub(super) fn split_row_at(mr: &MeasuredRow, cut: &SplitCut) -> SplitRow {
             // content is inset from its own left edge — the shared vertical is
             // the same line on both pages.
             content_dx: entry.content_dx,
+            broken,
         });
     }
 
@@ -714,7 +728,8 @@ mod tests {
             "two lines sharing a top expose a zero-offset cut"
         );
 
-        // ... and `cut_for_cell` must refuse it anyway.
+        // ... and `cut_for_cell` must refuse it anyway, given too little room for
+        // the whole cell (which it would keep, not cut).
         let entry = CellLayoutEntry {
             layout: crate::render::layout::cell::CellLayout {
                 commands: Vec::new(),
@@ -726,9 +741,10 @@ mod tests {
             cell_w: Pt::new(40.0),
             grid_col: 0,
             content_dx: Pt::ZERO,
+            broken: false,
         };
         assert!(
-            cut_for_cell(&entry, Pt::ZERO, Pt::ZERO, Pt::ZERO, Pt::new(100.0)).is_none(),
+            cut_for_cell(&entry, Pt::ZERO, Pt::ZERO, Pt::ZERO, Pt::new(20.0)).is_none(),
             "a zero-offset cut must be rejected - accepting it gives shift == 0 \
              and the continuation loop never progresses"
         );
@@ -1201,11 +1217,12 @@ mod tests {
     /// internally atomic, so it exposes no legal cut and cannot be divided —
     /// the same position an image-only cell is in, reached here without one.
     /// Its whole visible height then becomes a floor on the row's first half:
-    /// 84pt, above the 56 the splittable cell asked for. Without that floor the
-    /// uncut cell's last two lines would be drawn past the cut edge, on top of
-    /// whatever follows the table.
+    /// 84pt, above the 70 the splittable cell asked for — seven lines, too many
+    /// for the 90pt left, cut where widow control leaves two to carry. Without
+    /// that floor the uncut cell's last lines would be drawn past the cut edge,
+    /// on top of whatever follows the table.
     ///
-    /// The splittable cell still cuts at its own 56 — raising the floor must
+    /// The splittable cell still cuts at its own 70 — raising the floor must
     /// not make the row keep everything.
     #[test]
     fn an_uncuttable_cell_raises_the_rows_first_half_to_its_own_full_height() {
@@ -1214,7 +1231,7 @@ mod tests {
             ..Default::default()
         };
         let rows = vec![row_of(vec![
-            cell_n_lines(6, 0.0, ParagraphStyle::default()),
+            cell_n_lines(7, 0.0, ParagraphStyle::default()),
             cell_n_lines(6, 0.0, keep_lines),
         ])];
         let measured = measure_cols(&rows, 2);
@@ -1230,7 +1247,7 @@ mod tests {
         assert_eq!(
             parts.first.height,
             Pt::new(84.0),
-            "the uncuttable cell's full six lines, not the 56 the other asked for"
+            "the uncuttable cell's full six lines, not the 70 the other asked for"
         );
         assert_eq!(
             texts(&parts.first.entries[1].layout.commands).len(),
@@ -1243,7 +1260,7 @@ mod tests {
         );
         assert_eq!(
             texts(&parts.first.entries[0].layout.commands),
-            vec!["L0 ", "L1 ", "L2 ", "L3 "],
+            vec!["L0 ", "L1 ", "L2 ", "L3 ", "L4 "],
             "the splittable cell still cuts at its own legal point"
         );
     }
