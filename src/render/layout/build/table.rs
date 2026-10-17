@@ -14,7 +14,7 @@ use crate::render::resolve::conditional::{
 use crate::render::resolve::styles::ResolvedStyle;
 
 use super::block::build_paragraph_block;
-use crate::render::layout::fragment::split_oversized_fragments;
+use crate::render::layout::fragment::{split_oversized_fragments, word_widths};
 
 use super::convert::{
     convert_cell_border_override, convert_table_border_config, merge_table_borders,
@@ -26,6 +26,10 @@ pub(super) struct BuiltTable {
     pub(super) rows: Vec<TableRowInput>,
     /// Grid slots, already shrunk by `cell_spacing`.
     pub(super) col_widths: Vec<Pt>,
+    /// The narrowest this table's columns can be without cutting a word —
+    /// what it asks of the cell holding it (`cell_min_width`). An autofit
+    /// table's minimums; a fixed table cannot narrow, so its own width.
+    pub(super) min_width: Pt,
     /// §17.4.45 `tblCellSpacing` in points; zero when unset.
     pub(super) cell_spacing: Pt,
     pub(super) border_config: Option<crate::render::layout::table::TableBorderConfig>,
@@ -791,6 +795,16 @@ pub(super) fn build_table(
             Pt::from(margins.right).max(right_half),
         )
     };
+    // How wide a full-width table is — see the `pct` arm below for why it
+    // depends on the placement — and so the most an autofit table without a
+    // width may take (`autofit_widths`).
+    let full_width = if !start_aligned {
+        available_width
+    } else if indent_to_text {
+        available_width + text_inset_left + text_inset_right
+    } else {
+        available_width - outer_half_borders
+    };
     let target_width = match width {
         Some(model::TableMeasure::Pct(pct)) => {
             // §17.4.63 / §17.18.90: the `pct` scale is fiftieths of a percent,
@@ -830,12 +844,8 @@ pub(super) fn build_table(
             // when it is to the edge. A centred or end-aligned table is placed as
             // a box and takes the column as it is.
             let ratio = pct.to_fraction();
-            let base = if *pct >= Dimension::FULL && start_aligned {
-                if indent_to_text {
-                    available_width + text_inset_left + text_inset_right
-                } else {
-                    available_width - outer_half_borders
-                }
+            let base = if *pct >= Dimension::FULL {
+                full_width
             } else {
                 available_width
             };
@@ -844,15 +854,8 @@ pub(super) fn build_table(
         Some(model::TableMeasure::Twips(tw)) => Pt::from(*tw),
         _ => available_width, // auto/nil: use grid cols or available width
     };
-    // §17.4.52: tblLayout controls whether columns may auto-resize to fit
-    // content; it does not override the preferred table width from tblW.
-    // Word scales grid column widths proportionally to match tblW in both
-    // fixed and auto layouts. Only when tblW is auto/nil do we keep the raw
-    // grid widths (no preferred width was specified).
-    //
-    // `tblLayout` has no read site here, and when auto-fit lands it must **not**
-    // acquire a style level — §2.1.250(a) lists it, so a style's `tblLayout` is
-    // one of the elements Word does not read.
+    // §17.4.52 `tblLayout`, read from the `<w:tbl>` alone: §2.1.250(a) lists
+    // it, so a style's `tblLayout` is one of the elements Word does not read.
     //
     // Producers do write it there, so this is a decision and not a shortage of
     // documents: `sample-docx-files-sample-5.docx` and `-6.docx` each ship a
@@ -864,11 +867,23 @@ pub(super) fn build_table(
     // would ignore the element either way. The 226 `<w:tblLayout>` elements the
     // corpus does put on a `<w:tbl>` are the direct level, which §2.1.250(a)
     // says nothing about.
-    let col_widths = if is_auto_width && !grid_cols.is_empty() {
-        clamp_auto_grid_to_page(&grid_cols, num_cols, available_width, &state.page_config)
-    } else {
-        compute_column_widths(&grid_cols, num_cols, target_width)
+    let autofit = t.properties.layout.get().copied() != Some(model::TableLayout::Fixed);
+    // §17.4.71 `tcW` against §17.4.48 `tblGrid`: the cells' preferred widths
+    // decide the columns, and the grid only stands in for a cell that states
+    // none (`longest_path`). Under either layout Word scales the columns to a
+    // `tblW` the table declares; a fixed table without one keeps them as they
+    // are, and an autofit one grows them to its content (`autofit_widths`) once
+    // the cells are built below.
+    let claims = preferred_claims(&t.rows, &grid_cols);
+    let preferred = longest_path(num_cols, &claims);
+    let size_columns = |columns: &[Pt], state: &BuildState| {
+        if is_auto_width && !columns.is_empty() {
+            clamp_auto_grid_to_page(columns, num_cols, available_width, &state.page_config)
+        } else {
+            compute_column_widths(columns, num_cols, target_width)
+        }
     };
+    let col_widths = size_columns(&preferred, state);
     // §17.4.45: cell spacing is carved out of the table's own width rather than
     // added to it — the spec calls it "the minimum amount of space which shall
     // be left between all cells", not extra width. Reserving one spacing here
@@ -895,72 +910,72 @@ pub(super) fn build_table(
     // Build rows by iterating cells and recursing into their content.
     // A table built inside one of this table's cells is nested, which changes
     // what its indent measures to (`indent_to_text`).
-    state.table_depth += 1;
-    let rows: Vec<TableRowInput> = t
-        .rows
-        .iter()
-        .enumerate()
-        .map(|(row_idx, row)| {
-            // §17.4.60 `<w:tblPrEx><w:bidiVisual/></w:tblPrEx>`: this row's own
-            // declared width per cell, paired with the cell built below — see
-            // `RowBidiOverride` for why a flipped row needs its own widths
-            // rather than the shared grid's.
-            let (cells, cell_widths): (Vec<TableCellInput>, Vec<Pt>) = row
-                .cells
-                .iter()
-                .enumerate()
-                .map(|(col_idx, cell)| {
-                    // §17.4.15: gridBefore offsets the row's first cell to the
-                    // right by that many grid columns; subsequent spans accumulate.
-                    let span = grid_span(cell) as usize;
-                    let mut grid_start = row.properties.grid_before as usize;
-                    for ci in 0..col_idx {
-                        grid_start += grid_span(&row.cells[ci]) as usize;
-                    }
+    let build_rows = |col_widths: &[Pt],
+                      state: &mut BuildState|
+     -> (Vec<TableRowInput>, Vec<Vec<CellSlot>>) {
+        t.rows
+            .iter()
+            .enumerate()
+            .map(|(row_idx, row)| {
+                // §17.4.60 `<w:tblPrEx><w:bidiVisual/></w:tblPrEx>`: this row's own
+                // declared width per cell, paired with the cell built below — see
+                // `RowBidiOverride` for why a flipped row needs its own widths
+                // rather than the shared grid's.
+                let (cells, cell_slots): (Vec<TableCellInput>, Vec<CellSlot>) = row
+                    .cells
+                    .iter()
+                    .enumerate()
+                    .map(|(col_idx, cell)| {
+                        // §17.4.15: gridBefore offsets the row's first cell to the
+                        // right by that many grid columns; subsequent spans accumulate.
+                        let span = grid_span(cell) as usize;
+                        let mut grid_start = row.properties.grid_before as usize;
+                        for ci in 0..col_idx {
+                            grid_start += grid_span(&row.cells[ci]) as usize;
+                        }
 
-                    // §17.7.6: the cell's *grid* position, which is what decides
-                    // its column regions — see `applicable_regions` for Word's
-                    // own answer. `col_idx` and this row's cell count would be
-                    // the same thing only while no row spans or skips a column,
-                    // and a table with `gridSpan`/`gridBefore` is exactly the
-                    // table a conditional style is worth getting right on.
-                    let cond = resolve_cell_conditional(
-                        &CellGridPosition {
-                            row_idx,
-                            grid_col: grid_start,
-                            grid_span: span,
-                            num_rows,
-                            num_cols,
-                            row_band_size,
-                            col_band_size,
-                        },
-                        tbl_look,
-                        style_overrides,
-                    );
+                        // §17.7.6: the cell's *grid* position, which is what decides
+                        // its column regions — see `applicable_regions` for Word's
+                        // own answer. `col_idx` and this row's cell count would be
+                        // the same thing only while no row spans or skips a column,
+                        // and a table with `gridSpan`/`gridBefore` is exactly the
+                        // table a conditional style is worth getting right on.
+                        let cond = resolve_cell_conditional(
+                            &CellGridPosition {
+                                row_idx,
+                                grid_col: grid_start,
+                                grid_span: span,
+                                num_rows,
+                                num_cols,
+                                row_band_size,
+                                col_band_size,
+                            },
+                            tbl_look,
+                            style_overrides,
+                        );
 
-                    // Compute available width for nested content.
-                    // A row may address more grid columns than `tblGrid` declares —
-                    // a `gridBefore` past the end, or simply more `<w:tc>` than
-                    // `<w:gridCol>`. Both occur in real producer output and Word
-                    // recovers from them. Clamp *both* ends: clamping only the end
-                    // inverts the range and panics on the slice.
-                    let grid_start = grid_start.min(col_widths.len());
-                    let grid_end = (grid_start + span).min(col_widths.len());
-                    let cell_width: Pt = col_widths[grid_start..grid_end].iter().copied().sum();
-                    // Per-side cascade against the table default (see
-                    // `build_table_cell` for the spec rationale): the horizontal
-                    // padding contribution is the resolved left+right insets.
-                    let table_default =
-                        default_cell_margins.unwrap_or(crate::model::geometry::EdgeInsets::ZERO);
-                    let resolved_h = match cell.properties.margins.get() {
-                        Some(partial) => partial.resolve_against(table_default),
-                        None => table_default,
-                    };
-                    let cell_margins_h = Pt::from(resolved_h.left) + Pt::from(resolved_h.right);
-                    let inner_width = (cell_width - cell_margins_h).max(Pt::ZERO);
+                        // Compute available width for nested content.
+                        // A row may address more grid columns than `tblGrid` declares —
+                        // a `gridBefore` past the end, or simply more `<w:tc>` than
+                        // `<w:gridCol>`. Both occur in real producer output and Word
+                        // recovers from them. Clamp *both* ends: clamping only the end
+                        // inverts the range and panics on the slice.
+                        let grid_start = grid_start.min(col_widths.len());
+                        let grid_end = (grid_start + span).min(col_widths.len());
+                        let cell_width: Pt = col_widths[grid_start..grid_end].iter().copied().sum();
+                        // Per-side cascade against the table default (see
+                        // `build_table_cell` for the spec rationale): the horizontal
+                        // padding contribution is the resolved left+right insets.
+                        let table_default = default_cell_margins
+                            .unwrap_or(crate::model::geometry::EdgeInsets::ZERO);
+                        let resolved_h = match cell.properties.margins.get() {
+                            Some(partial) => partial.resolve_against(table_default),
+                            None => table_default,
+                        };
+                        let cell_margins_h = Pt::from(resolved_h.left) + Pt::from(resolved_h.right);
+                        let inner_width = (cell_width - cell_margins_h).max(Pt::ZERO);
 
-                    (
-                        build_table_cell(
+                        let (built, nested_min) = build_table_cell(
                             cell,
                             raw_table_style,
                             default_cell_margins,
@@ -968,92 +983,190 @@ pub(super) fn build_table(
                             inner_width,
                             ctx,
                             state,
-                        ),
-                        cell_width,
-                    )
-                })
-                .collect();
+                        );
+                        (
+                            built,
+                            CellSlot {
+                                start: grid_start,
+                                end: grid_end,
+                                nested_min,
+                            },
+                        )
+                    })
+                    .collect();
 
-            // Word/LibreOffice row-uniform content-area quirk — see
-            // `normalize_row_uniform_vertical_insets` for the spec gap and
-            // empirical evidence motivating this pass.
-            let mut cells = cells;
-            normalize_row_uniform_vertical_insets(&mut cells);
+                // Word/LibreOffice row-uniform content-area quirk — see
+                // `normalize_row_uniform_vertical_insets` for the spec gap and
+                // empirical evidence motivating this pass.
+                let mut cells = cells;
+                let mut cell_slots = cell_slots;
+                normalize_row_uniform_vertical_insets(&mut cells);
 
-            // §17.4.60 `<w:tblPrEx><w:bidiVisual/></w:tblPrEx>`: reverse this
-            // one row into visual order, each cell keeping the width just
-            // computed above rather than the slot it now occupies, and swap
-            // each cell's own logical left/right the same way `mirror_columns`
-            // does for a whole `bidiVisual` table — `w:tcBorders/w:left` is a
-            // logical edge regardless of whether the flip is table-wide or
-            // scoped to one row. See `RowBidiOverride` for the render this
-            // reproduces and what it leaves open.
-            let bidi_override = if row
-                .property_exceptions
-                .as_ref()
-                .and_then(|ex| ex.bidi_visual)
-                == Some(true)
-            {
-                let mut cell_widths = cell_widths;
-                cells.reverse();
-                cell_widths.reverse();
-                for cell in cells.iter_mut() {
-                    std::mem::swap(&mut cell.margins.left, &mut cell.margins.right);
-                    if let Some(b) = cell.cell_borders.as_mut() {
-                        std::mem::swap(&mut b.left, &mut b.right);
-                    }
-                }
-                let total: Pt = cell_widths.iter().copied().sum();
-                Some(RowBidiOverride {
-                    cell_widths,
-                    leading_offset: (available_width - total).max(Pt::ZERO),
-                })
-            } else {
-                None
-            };
-
-            TableRowInput {
-                cells,
-                // §17.4.80: `exact` pins the height, `atLeast` is a minimum,
-                // and `auto` **ignores `val`** — the row sizes to its content,
-                // so it carries no constraint at all. An omitted `hRule`
-                // arrives as `AtLeast` (Word's default, set at the parse seam),
-                // which is why folding `auto` in with it used to be invisible:
-                // [MS-OE376] §2.4.77(c) notes Word requires `val = 0` whenever
-                // `hRule="auto"`, making `AtLeast(0)` a no-op on Word output.
-                // Other producers are not bound by that.
-                height_rule: row.properties.height.cloned().and_then(row_height_rule),
-                is_header: row.properties.is_header,
-                cant_split: row.properties.cant_split,
-                grid_before: row.properties.grid_before,
-                // §17.4.60: row-level tblPrEx.tblBorders — per-side
-                // override of the table's effective borders. We merge
-                // *at the model layer* (Option<Border> with style=None
-                // is preserved), then convert to layout — that keeps
-                // the spec's "specified as none" vs "not specified"
-                // distinction that converting first would erase.
-                border_overrides: row
+                // §17.4.60 `<w:tblPrEx><w:bidiVisual/></w:tblPrEx>`: reverse this
+                // one row into visual order, each cell keeping the width just
+                // computed above rather than the slot it now occupies, and swap
+                // each cell's own logical left/right the same way `mirror_columns`
+                // does for a whole `bidiVisual` table — `w:tcBorders/w:left` is a
+                // logical edge regardless of whether the flip is table-wide or
+                // scoped to one row. See `RowBidiOverride` for the render this
+                // reproduces and what it leaves open.
+                let bidi_override = if row
                     .property_exceptions
                     .as_ref()
-                    .and_then(|ex| ex.borders.as_ref())
-                    .map(|over| {
-                        let merged = match tbl_borders.as_ref() {
-                            Some(table) => merge_table_borders(over, table),
-                            None => *over,
-                        };
-                        convert_table_border_config(&merged, state)
-                    }),
-                bidi_override,
-            }
-        })
-        .collect();
+                    .and_then(|ex| ex.bidi_visual)
+                    == Some(true)
+                {
+                    cells.reverse();
+                    cell_slots.reverse();
+                    for cell in cells.iter_mut() {
+                        std::mem::swap(&mut cell.margins.left, &mut cell.margins.right);
+                        if let Some(b) = cell.cell_borders.as_mut() {
+                            std::mem::swap(&mut b.left, &mut b.right);
+                        }
+                    }
+                    // Widths are filled in once the columns are final, below.
+                    Some(RowBidiOverride {
+                        cell_widths: Vec::new(),
+                        leading_offset: Pt::ZERO,
+                    })
+                } else {
+                    None
+                };
+
+                let row_input = TableRowInput {
+                    cells,
+                    // §17.4.80: `exact` pins the height, `atLeast` is a minimum,
+                    // and `auto` **ignores `val`** — the row sizes to its content,
+                    // so it carries no constraint at all. An omitted `hRule`
+                    // arrives as `AtLeast` (Word's default, set at the parse seam),
+                    // which is why folding `auto` in with it used to be invisible:
+                    // [MS-OE376] §2.4.77(c) notes Word requires `val = 0` whenever
+                    // `hRule="auto"`, making `AtLeast(0)` a no-op on Word output.
+                    // Other producers are not bound by that.
+                    height_rule: row.properties.height.cloned().and_then(row_height_rule),
+                    is_header: row.properties.is_header,
+                    cant_split: row.properties.cant_split,
+                    grid_before: row.properties.grid_before,
+                    // §17.4.60: row-level tblPrEx.tblBorders — per-side
+                    // override of the table's effective borders. We merge
+                    // *at the model layer* (Option<Border> with style=None
+                    // is preserved), then convert to layout — that keeps
+                    // the spec's "specified as none" vs "not specified"
+                    // distinction that converting first would erase.
+                    border_overrides: row
+                        .property_exceptions
+                        .as_ref()
+                        .and_then(|ex| ex.borders.as_ref())
+                        .map(|over| {
+                            let merged = match tbl_borders.as_ref() {
+                                Some(table) => merge_table_borders(over, table),
+                                None => *over,
+                            };
+                            convert_table_border_config(&merged, state)
+                        }),
+                    bidi_override,
+                };
+                (row_input, cell_slots)
+            })
+            .unzip()
+    };
+
+    // §17.4.52: an autofit table's columns, from what its cells say about how
+    // narrow their content can go — and how narrow the table can go, which is
+    // what an enclosing autofit table needs of it (`BuiltTable::min_width`).
+    let fit_columns = |rows: &[TableRowInput],
+                       slots: &[Vec<CellSlot>],
+                       provisional: &[Pt],
+                       state: &BuildState|
+     -> (Vec<Pt>, Pt) {
+        if !autofit || preferred.iter().copied().sum::<Pt>() <= Pt::ZERO {
+            return (provisional.to_vec(), provisional.iter().copied().sum());
+        }
+        let min_claims: Vec<ColumnClaim> = rows
+            .iter()
+            .zip(slots)
+            .flat_map(|(row, row_slots)| {
+                row.cells
+                    .iter()
+                    .zip(row_slots)
+                    .map(|(cell, slot)| ColumnClaim {
+                        start: slot.start,
+                        span: slot.end - slot.start,
+                        width: cell_min_width(cell, slot.nested_min),
+                    })
+            })
+            .collect();
+        let narrowest = longest_path(num_cols, &min_claims);
+        // Every claim at once: the columns grown just enough to hold their
+        // content.
+        let both: Vec<ColumnClaim> = claims.iter().chain(&min_claims).copied().collect();
+        let grown = longest_path(num_cols, &both);
+        let minimum = minimum_within(&min_claims, &grown);
+        let fitted = autofit_widths(
+            &preferred,
+            &grown,
+            &minimum,
+            (!is_auto_width).then_some(target_width),
+            full_width,
+        );
+        let fitted = if is_auto_width {
+            clamp_auto_grid_to_page(&fitted, num_cols, available_width, &state.page_config)
+        } else {
+            fitted
+        };
+        (
+            reserve_cell_spacing(fitted, cell_spacing),
+            narrowest.iter().copied().sum(),
+        )
+    };
+
+    // A nested table is built at the width its cell is given, so a table
+    // holding one is measured first — speculatively, its document-order
+    // counters rolled back — and built again at its final widths. Word fits
+    // a nested table to the column its enclosing table settles on: the tenant
+    // ClerkSummaryReports' fee tables come out exactly as `autofit_widths`
+    // shrinks them into the 215.5pt column it gives the outer table.
+    let has_nested = t.rows.iter().any(|r| {
+        r.cells
+            .iter()
+            .any(|c| c.content.iter().any(|b| matches!(b, Block::Table(_))))
+    });
+    state.table_depth += 1;
+    let (mut rows, slots, col_widths, min_width) = if autofit && has_nested {
+        let (fitted, min_width) = state.speculatively(|s| {
+            let (rows, slots) = build_rows(&col_widths, s);
+            fit_columns(&rows, &slots, &col_widths, s)
+        });
+        let (rows, slots) = build_rows(&fitted, state);
+        (rows, slots, fitted, min_width)
+    } else {
+        let (rows, slots) = build_rows(&col_widths, state);
+        let (fitted, min_width) = fit_columns(&rows, &slots, &col_widths, state);
+        (rows, slots, fitted, min_width)
+    };
     state.table_depth -= 1;
+
+    // Each cell at its final width: words too wide for it are cut, and a
+    // flipped row learns its cells' widths.
+    for (row, row_slots) in rows.iter_mut().zip(&slots) {
+        let widths: Vec<Pt> = row_slots
+            .iter()
+            .map(|slot| col_widths[slot.start..slot.end].iter().copied().sum())
+            .collect();
+        for (cell, width) in row.cells.iter_mut().zip(&widths) {
+            fit_cell_content(cell, *width, ctx);
+        }
+        if let Some(over) = row.bidi_override.as_mut() {
+            let total: Pt = widths.iter().copied().sum();
+            over.leading_offset = (available_width - total).max(Pt::ZERO);
+            over.cell_widths = widths;
+        }
+    }
 
     // §17.4.84: an unpaired `w:vMerge w:val="continue"` is malformed input, and
     // is repaired here — once, over the finished rows — so that measure, emit,
     // border resolution and the paginator cannot disagree about whether a given
     // cell is merged.
-    let mut rows = rows;
     let orphans = promote_orphan_vmerge_continues(&mut rows);
     if orphans > 0 && !state.warned_orphan_vmerge {
         state.warned_orphan_vmerge = true;
@@ -1190,6 +1303,7 @@ pub(super) fn build_table(
     BuiltTable {
         rows,
         col_widths,
+        min_width,
         cell_spacing,
         border_config,
         indent,
@@ -1515,7 +1629,7 @@ fn build_table_cell(
     inner_width: Pt,
     ctx: &BuildContext,
     state: &mut BuildState,
-) -> TableCellInput {
+) -> (TableCellInput, Pt) {
     // §17.4.42: cell margins cascade *per side* against the pre-merged
     // table default. A cell-level `<w:tcMar>` that specifies only some sides
     // (e.g. `top`/`bottom` only — common in LibreOffice output) must inherit
@@ -1611,29 +1725,14 @@ fn build_table_cell(
         })
         .unwrap_or(crate::render::layout::table::CellVAlign::Top);
 
-    // Estimate border insets to compute effective content width for
-    // character-level splitting of oversized fragments.
-    let border_w = |ovr: &Option<CellBorderOverride>| -> Pt {
-        match ovr {
-            Some(CellBorderOverride::Border(b)) => b.width,
-            _ => Pt::ZERO,
-        }
-    };
-    let border_inset_h = cell_borders
-        .as_ref()
-        .map(|cb| {
-            let bl = (border_w(&cb.left) - cell_margins.left).max(Pt::ZERO);
-            let br = (border_w(&cb.right) - cell_margins.right).max(Pt::ZERO);
-            bl + br
-        })
-        .unwrap_or(Pt::ZERO);
-    let content_width = (inner_width - border_inset_h).max(Pt::ZERO);
+    let content_width =
+        (inner_width - border_excess(cell_borders.as_ref(), &cell_margins)).max(Pt::ZERO);
 
     // Recurse into cell content blocks.
-    let cell_blocks =
+    let (cell_blocks, nested_min) =
         build_cell_blocks(&cell.content, table_style, cond, content_width, ctx, state);
 
-    TableCellInput {
+    let input = TableCellInput {
         blocks: cell_blocks,
         margins: cell_margins,
         grid_span: grid_span(cell),
@@ -1648,10 +1747,12 @@ fn build_table_cell(
             }
         }),
         vertical_align: valign,
-    }
+    };
+    (input, nested_min)
 }
 
-/// Recursively build cell content blocks.
+/// Recursively build cell content blocks, and the widest `min_width` of the
+/// tables nested among them.
 ///
 /// Paragraphs are resolved with table style + conditional overrides.
 /// Nested tables recurse via `build_table()` → `layout_table()`.
@@ -1662,8 +1763,9 @@ fn build_cell_blocks(
     inner_width: Pt,
     ctx: &BuildContext,
     state: &mut BuildState,
-) -> Vec<LayoutBlock> {
+) -> (Vec<LayoutBlock>, Pt) {
     let mut blocks = Vec::new();
+    let mut nested_min = Pt::ZERO;
     let mut pending_dropcap: Option<DropCapInfo> = None;
 
     for (i, block) in content.iter().enumerate() {
@@ -1679,6 +1781,9 @@ fn build_cell_blocks(
                 {
                     continue;
                 }
+                // Oversized words are cut later, by `fit_cell_content`, once the
+                // column widths are final: an autofit column is sized from the
+                // words as written (`autofit_widths`).
                 if let Some(lb) = build_paragraph_block(
                     p,
                     ctx,
@@ -1687,39 +1792,12 @@ fn build_cell_blocks(
                     table_style,
                     Some(cond),
                 ) {
-                    // Split oversized text fragments for narrow cells.
-                    let lb = if let LayoutBlock::Paragraph {
-                        fragments,
-                        style,
-                        page_break_before,
-                        footnotes,
-                        floating_images,
-                        floating_shapes,
-                    } = lb
-                    {
-                        // Keep the owned vector when no split is needed.
-                        let measure = |t: &str, f: &crate::render::layout::fragment::FontProps| {
-                            ctx.measurer.measure(t, f)
-                        };
-                        let fragments =
-                            split_oversized_fragments(&fragments, inner_width, Some(&measure))
-                                .unwrap_or(fragments);
-                        LayoutBlock::Paragraph {
-                            fragments,
-                            style,
-                            page_break_before,
-                            footnotes,
-                            floating_images,
-                            floating_shapes,
-                        }
-                    } else {
-                        lb
-                    };
                     blocks.push(lb);
                 }
             }
             Block::Table(nested_t) => {
                 let built = build_table(nested_t, inner_width, ctx, state);
+                nested_min = nested_min.max(built.min_width);
                 blocks.push(LayoutBlock::Table {
                     rows: built.rows,
                     col_widths: built.col_widths,
@@ -1736,7 +1814,285 @@ fn build_cell_blocks(
         }
     }
 
-    blocks
+    (blocks, nested_min)
+}
+
+/// What a cell's left and right borders take from its content beyond the
+/// margins on their sides — the estimate oversized words are cut against.
+fn border_excess(borders: Option<&CellBorderConfig>, margins: &geometry::PtEdgeInsets) -> Pt {
+    let border_w = |ovr: &Option<CellBorderOverride>| -> Pt {
+        match ovr {
+            Some(CellBorderOverride::Border(b)) => b.width,
+            _ => Pt::ZERO,
+        }
+    };
+    borders
+        .map(|cb| {
+            let bl = (border_w(&cb.left) - margins.left).max(Pt::ZERO);
+            let br = (border_w(&cb.right) - margins.right).max(Pt::ZERO);
+            bl + br
+        })
+        .unwrap_or(Pt::ZERO)
+}
+
+/// The horizontal room a cell keeps from its content: both margins and the
+/// border excess over them.
+fn cell_horizontal_inset(cell: &TableCellInput) -> Pt {
+    cell.margins.left
+        + cell.margins.right
+        + border_excess(cell.cell_borders.as_ref(), &cell.margins)
+}
+
+/// The narrowest a cell can be without cutting a word: the widest word of any
+/// of its paragraphs set where that paragraph's lines start, or the narrowest
+/// its nested tables can be (`nested`, their `BuiltTable::min_width`), plus
+/// the cell's own inset.
+///
+/// A word stands at the left indent, the first at the left indent plus the
+/// first-line one, and the right indent is kept clear after it — signed, as
+/// line layout reads them. Measured on the tenant DelinquencyNotices, whose
+/// 163pt `{#ownerAddress}{fullAddressPrimary}` holds a 169.5pt column in Word
+/// because its paragraph is indented −5.25pt; and on albanyny's
+/// `template.docx`, an empty numbered paragraph indented 23.5pt with a 17.85pt
+/// hanging indent, whose label in a 35.2pt column Word does not widen.
+///
+/// Plus a hundredth of a point. Word sizes columns in twips, so a column it
+/// fits to a word holds it; here the column comes out of f32 sums and
+/// differences (`longest_path`, `autofit_widths`) and of the inset taken off
+/// again, a few ulps either side of the word, and a word an ulp too wide is
+/// cut or wrapped.
+fn cell_min_width(cell: &TableCellInput, nested: Pt) -> Pt {
+    const ROUNDING: Pt = Pt::new(0.01);
+    let words = cell
+        .blocks
+        .iter()
+        .map(|block| match block {
+            LayoutBlock::Paragraph {
+                fragments, style, ..
+            } => {
+                let widths = word_widths(fragments);
+                let Some((first, rest)) = widths.split_first() else {
+                    return Pt::ZERO;
+                };
+                let first = *first + style.indent_first_line;
+                let widest = rest.iter().copied().fold(first, Pt::max);
+                (widest + style.indent_left + style.indent_right).max(Pt::ZERO)
+            }
+            LayoutBlock::Table { .. } => Pt::ZERO,
+        })
+        .fold(Pt::ZERO, Pt::max);
+    words.max(nested) + cell_horizontal_inset(cell) + ROUNDING
+}
+
+/// Cut the words too wide for a cell `cell_width` wide, now that its column is
+/// final — see `split_oversized_fragments`.
+fn fit_cell_content(cell: &mut TableCellInput, cell_width: Pt, ctx: &BuildContext) {
+    let content_width = (cell_width - cell_horizontal_inset(cell)).max(Pt::ZERO);
+    let measure =
+        |t: &str, f: &crate::render::layout::fragment::FontProps| ctx.measurer.measure(t, f);
+    for block in &mut cell.blocks {
+        if let LayoutBlock::Paragraph { fragments, .. } = block {
+            if let Some(split) = split_oversized_fragments(fragments, content_width, Some(&measure))
+            {
+                *fragments = split;
+            }
+        }
+    }
+}
+
+/// What every row claims of the grid before any content is measured: each
+/// cell its `w:tcW`, and a cell stating no `dxa` width — or the columns a
+/// `gridBefore`/`gridAfter` leaves empty — what the grid gives those columns.
+///
+/// A `pct` `tcW` counts as no width, for the reason `dxa_twips` gives: its
+/// base is the table's width, which is what these claims decide.
+fn preferred_claims(rows: &[model::TableRow], grid: &[Pt]) -> Vec<ColumnClaim> {
+    let n = grid.len();
+    let mut claims = Vec::new();
+    let mut claim = |start: usize, span: usize, width: Option<Pt>| {
+        let start = start.min(n);
+        let end = start.saturating_add(span).min(n);
+        if end > start {
+            let width = width.unwrap_or_else(|| grid[start..end].iter().copied().sum());
+            claims.push(ColumnClaim {
+                start,
+                span: end - start,
+                width,
+            });
+        }
+    };
+    for row in rows {
+        let mut col = row.properties.grid_before as usize;
+        claim(0, col, None);
+        for cell in &row.cells {
+            let span = grid_span(cell) as usize;
+            let width = cell
+                .properties
+                .width
+                .get()
+                .and_then(dxa_twips)
+                .map(Pt::from);
+            claim(col, span, width);
+            col = col.saturating_add(span);
+        }
+        // A `gridAfter` keeps the grid's widths for the columns it skips. A row
+        // that simply stops short of the grid claims nothing past its last
+        // cell: Word gives a lone row of two 200pt cells on a grid of four
+        // 100pt columns the whole 400pt `tblW` (`table-widths.docx` T12), and
+        // a three-column span with no `tcW` all of it (T13).
+        claim(col, row.properties.grid_after as usize, None);
+    }
+    claims
+}
+
+/// Where a built cell sits on the grid — columns `start..end` — and what its
+/// nested tables need of it (`build_cell_blocks`).
+#[derive(Clone, Copy, Debug)]
+struct CellSlot {
+    start: usize,
+    end: usize,
+    nested_min: Pt,
+}
+
+/// One cell's claim on the grid: `span` columns from `start` together at
+/// least `width` wide.
+#[derive(Clone, Copy, Debug)]
+struct ColumnClaim {
+    start: usize,
+    span: usize,
+    width: Pt,
+}
+
+/// The narrowest columns that satisfy every claim: each grid line stands as far
+/// right as the widest claim ending on it needs, measured from the line its
+/// claim starts on.
+///
+/// Measured in Word against `test-files/table-widths.docx`, which declares
+/// columns whose cells' `w:tcW` disagree with `w:tblGrid` and with each other:
+/// a column is as wide as the widest `tcW` in it — two rows of 3024/6048 and
+/// 6048/3024 twips give two columns of 6048 (T3) — and a spanning cell wider
+/// than the columns it covers widens the **last** of them, by what the others
+/// leave it short (T7: 7000 twips over a 3024 column puts the second at 3976).
+/// The grid is Word's cache of its last layout and plays no part when the cells
+/// state widths (T1, T2).
+fn longest_path(columns: usize, claims: &[ColumnClaim]) -> Vec<Pt> {
+    let mut lines = vec![Pt::ZERO; columns + 1];
+    for end in 1..=columns {
+        let mut at = lines[end - 1];
+        for c in claims.iter().filter(|c| c.start + c.span == end) {
+            at = at.max(lines[c.start] + c.width);
+        }
+        lines[end] = at;
+    }
+    lines.windows(2).map(|w| w[1] - w[0]).collect()
+}
+
+/// The narrowest columns that still satisfy every claim with no column wider
+/// than in `widest` — which itself satisfies them all.
+///
+/// `longest_path` alone puts a spanning cell's shortfall in the last column it
+/// covers, which may already be at its widest, so the shortfall has to move to
+/// the columns before it: each grid line is pushed right until the column after
+/// it fits under its cap, and the claims are walked again, until nothing moves.
+/// Capping each column instead loses the span — the tenant Shellfish permits'
+/// `Signature:` covers a 39.6pt and a 10.6pt column, and a cap gave the first
+/// back what the shrink then took, cutting the word.
+fn minimum_within(claims: &[ColumnClaim], widest: &[Pt]) -> Vec<Pt> {
+    let n = widest.len();
+    let mut lines = vec![Pt::ZERO; n + 1];
+    for _ in 0..=n {
+        for end in 1..=n {
+            let mut at = lines[end].max(lines[end - 1]);
+            for c in claims.iter().filter(|c| c.start + c.span == end) {
+                at = at.max(lines[c.start] + c.width);
+            }
+            lines[end] = at;
+        }
+        let mut moved = false;
+        for j in (0..n).rev() {
+            let floor = lines[j + 1] - widest[j];
+            if floor > lines[j] {
+                lines[j] = floor;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    lines.windows(2).map(|w| w[1] - w[0]).collect()
+}
+
+/// §17.4.52 `autofit`: Word's column widths from the cells' preferred widths
+/// (`declared`), those grown to the widest word in each column (`grown`) and
+/// the widths the content cannot go below (`minimum`), against the table's own
+/// width (`target`, from `w:tblW`) or, without one, the most the table may
+/// take (`limit`).
+///
+/// Measured in Word against `test-files/autofit-columns.docx` and
+/// `table-widths.docx`, and on the tenant DonationReport:
+///
+/// * a column grows to the widest word in it — `{#donations}{Donor}` widens a
+///   72pt column to 94.56pt, its tag plus the cell margins;
+/// * a table without a width keeps those columns while they fit, and past
+///   `limit` takes the excess from the columns with room to give, each in
+///   proportion to how far its width stands above its minimum —
+///   DonationReport's `{Email}` column, 33pt of room, gives 14.6pt where the
+///   `{Amount}` columns, 22pt each, give 9.8pt;
+/// * a table with a width scales the grown columns up to it proportionally
+///   (`autofit-columns.docx` F5), or takes it the way the case above does
+///   when they are wider — T11's 100 and 300pt columns in a 200pt table come
+///   out 60.96 and 138.96pt, not the 50 and 150 a proportional scale gives.
+///
+/// When the minimums do not fit the table's width they are what it gets, wider
+/// than declared (T10: 388pt of them in a 360pt table) — while they fit
+/// `limit`. When they do not even fit that, nothing grows: the declared widths
+/// are kept, scaled to `target` when there is one, and the words are cut in
+/// their cells. Measured on the tenant DogLicenseMonthlyReports, whose 100%
+/// tables of eleven merge-tag columns would need 782pt of minimums on a 540pt
+/// line, and which Word draws at their declared widths.
+fn autofit_widths(
+    declared: &[Pt],
+    grown: &[Pt],
+    minimum: &[Pt],
+    target: Option<Pt>,
+    limit: Pt,
+) -> Vec<Pt> {
+    let scale_to = |widths: &[Pt], to: Pt| -> Vec<Pt> {
+        let total: Pt = widths.iter().copied().sum();
+        if total <= Pt::ZERO {
+            return widths.to_vec();
+        }
+        let scale = to / total;
+        widths.iter().map(|w| *w * scale).collect()
+    };
+    let total: Pt = grown.iter().copied().sum();
+    let fit = match target {
+        Some(t) if total < t => return scale_to(grown, t),
+        Some(t) => t,
+        None if total > limit => limit,
+        None => return grown.to_vec(),
+    };
+    let floor: Pt = minimum.iter().copied().sum();
+    if floor >= fit {
+        if floor <= limit {
+            return minimum.to_vec();
+        }
+        return match target {
+            Some(t) => scale_to(declared, t),
+            None => declared.to_vec(),
+        };
+    }
+    let room = total - floor;
+    if room <= Pt::ZERO {
+        return grown.to_vec();
+    }
+    let keep = (fit - floor) / room;
+    grown
+        .iter()
+        .zip(minimum)
+        .map(|(p, m)| *m + (*p - *m) * keep)
+        .collect()
 }
 
 #[cfg(test)]

@@ -44,6 +44,18 @@ pub type MeasureFn<'a> = Option<&'a dyn Fn(&str, &FontProps) -> (Pt, TextMetrics
 ///
 /// [LB7]: https://www.unicode.org/reports/tr14/#LB7
 fn oversized_words(fragments: &[Fragment], max_width: Pt) -> Vec<bool> {
+    let mut cut = vec![false; fragments.len()];
+    for (start, end, width) in text_words(fragments) {
+        if width > max_width {
+            cut[start..=end].fill(true);
+        }
+    }
+    cut
+}
+
+/// The words of `fragments`, as `oversized_words` defines them: the first and
+/// last fragment of each, and its width without trailing whitespace.
+fn text_words(fragments: &[Fragment]) -> Vec<(usize, usize, Pt)> {
     let text_at = |i: usize| match fragments.get(i) {
         Some(Fragment::Text {
             width,
@@ -53,7 +65,7 @@ fn oversized_words(fragments: &[Fragment], max_width: Pt) -> Vec<bool> {
         }) => Some((*width, *trimmed_width, *break_after)),
         _ => None,
     };
-    let mut cut = vec![false; fragments.len()];
+    let mut words = Vec::new();
     let mut start = 0;
     while start < fragments.len() {
         if text_at(start).is_none() {
@@ -71,12 +83,28 @@ fn oversized_words(fragments: &[Fragment], max_width: Pt) -> Vec<bool> {
                 break;
             }
         }
-        if width > max_width {
-            cut[start..=end].fill(true);
-        }
+        words.push((start, end, width));
         start = end + 1;
     }
-    cut
+    words
+}
+
+/// The widths of `fragments`' words in order: each word as `oversized_words`
+/// defines it, and each inline picture, fraction or emoji as a word of its
+/// own. The widest is the narrowest line the paragraph can be set on without
+/// cutting anything, which Word grows an autofit table's column to
+/// (`build::table`'s `cell_min_width`).
+pub fn word_widths(fragments: &[Fragment]) -> Vec<Pt> {
+    let mut words = text_words(fragments);
+    let atoms = fragments.iter().enumerate().filter_map(|(i, f)| match f {
+        Fragment::Image { .. } | Fragment::MathFraction { .. } | Fragment::Emoji { .. } => {
+            Some((i, i, f.width()))
+        }
+        _ => None,
+    });
+    words.extend(atoms);
+    words.sort_unstable_by_key(|&(start, _, _)| start);
+    words.into_iter().map(|(_, _, w)| w).collect()
 }
 
 /// Whether `fragment` has more than one cluster to cut it into. The *cluster*

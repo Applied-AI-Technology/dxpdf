@@ -453,6 +453,8 @@ const ALL_FILES: &[&str] = &[
     "symbol-bullet.docx",
     "page-bottom-spacing.docx",
     "oversized-word.docx",
+    "table-widths.docx",
+    "autofit-columns.docx",
 ];
 
 #[test]

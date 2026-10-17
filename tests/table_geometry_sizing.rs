@@ -179,6 +179,10 @@ fn two_col_table(tbl_pr: &str, grid: &str) -> Vec<u8> {
 /// a truncation: the table comes out at its declared 200 pt with the columns
 /// still in their declared 1:3 ratio.
 ///
+/// A **fixed** table, which is what scales proportionally: Word draws
+/// `test-files/table-widths.docx`'s T5 so. An autofit one shrinks by its
+/// content instead (T11, `build::table`'s `autofit_widths`).
+///
 /// The column boundary is read as the gap between the two cells' text rather
 /// than as an absolute x, so it does not depend on the inset each cell's text
 /// carries — as long as both carry the same one. That is what the 5 pt
@@ -191,6 +195,7 @@ fn two_col_table(tbl_pr: &str, grid: &str) -> Vec<u8> {
 fn a_dxa_table_width_scales_the_declared_grid_rather_than_truncating_it() {
     let pages = layout(&two_col_table(
         r#"<w:tblW w:w="4000" w:type="dxa"/>
+           <w:tblLayout w:type="fixed"/>
            <w:tblCellMar>
              <w:left w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/>
            </w:tblCellMar>"#,

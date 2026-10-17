@@ -35,7 +35,7 @@ pub use collect::{
 pub use fallback::{apply_font_fallback, FallbackLookup, RegistryFallback};
 pub(crate) use math::fraction_geometry;
 pub use shape::shape_runs;
-pub use split::split_oversized_fragments;
+pub use split::{split_oversized_fragments, word_widths};
 
 // ── Superscript / subscript rendering constants ───────────────────────────────
 // §17.3.2.42: these ratios are "application-defined" per the spec; the values

@@ -185,13 +185,16 @@ fn shaded(pages: &[LayoutedPage]) -> Vec<(String, i32, i32)> {
 /// The discriminating case, and Word's own answer to it: a lone cell spanning
 /// all but the last grid column is in the **first** column region and not the
 /// last. Read as a cell index it is both — the only cell in its row.
+///
+/// Its width is the table's whole 400pt: the grid column no cell covers takes
+/// nothing, as Word draws the same shape in `test-files/table-widths.docx` T13.
 #[test]
 fn a_span_that_stops_short_of_the_last_grid_column_is_not_the_last_column() {
     let pages = layout(&document(&format!("<w:tr>{}</w:tr>", cell(3))));
     assert_eq!(
         shaded(&pages),
-        vec![(RED.to_string(), 72, 300)],
-        "grid columns 0..2 of 4: firstCol only, over the cell's full 3-column width"
+        vec![(RED.to_string(), 72, 400)],
+        "grid columns 0..2 of 4: firstCol only, over the table's width"
     );
 }
 

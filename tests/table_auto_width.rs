@@ -1,33 +1,32 @@
 //! §17.4.63 / §17.4.52 — how wide an auto-width table is allowed to get.
 //!
-//! A `<w:tblW w:type="auto"/>` table states no preferred width, so this engine
-//! keeps its `<w:tblGrid>` verbatim: Word's autofit algorithm is not
-//! implemented (see `table::grid::compute_column_widths`), and scaling the
-//! declared grid to the text column would be *implementing* one, badly.
+//! A `<w:tblW w:type="auto"/>` table states no preferred width, and what it
+//! gets instead depends on §17.4.52 `tblLayout`, measured in Word against
+//! `test-files/table-widths.docx`: a **fixed** table keeps the widths its cells
+//! declare however far past the text column they reach (T3, which Word draws
+//! off the paper), while an **autofit** one is shrunk to the column (T4, T8 —
+//! `build::table`'s `autofit_widths`).
 //!
-//! Verbatim has a floor, though. A grid summing to 20000 twips on a Letter page
-//! drew the table from x=72 to x=1072 — 460 pt past the right edge of the paper
-//! — and every glyph and border out there is simply gone from the PDF. This
-//! file pins the guard, and pins how narrow it deliberately is.
+//! So a fixed table can still leave the page, and there the guard holds. A grid
+//! summing to 20000 twips on a Letter page drew the table from x=72 to x=1072 —
+//! 460 pt past the right edge of the paper — and every glyph and border out
+//! there is simply gone from the PDF. This file pins the guard, and pins how
+//! narrow it deliberately is.
 //!
 //! # Why the guard is drawn at the paper and not at the text column
 //!
-//! Clamping to the content area is the obvious fix and is refuted by the
-//! corpus. Three real documents ship an auto table whose grid exceeds the text
-//! column — `sample-docx-files-sample3.docx` by 101 twips, `ELH_2025-12-18` and
+//! Clamping a fixed table to the content area is refuted by Word and by the
+//! corpus. Three real documents ship a table whose grid exceeds the text column
+//! — `sample-docx-files-sample3.docx` by 101 twips, `ELH_2025-12-18` and
 //! `KAB_2026-03-25` by ~172 twips across 39 tables — and all 39 of the latter
 //! declare `<w:tblLayout w:type="fixed"/>`, which is §17.4.52's instruction to
 //! use the declared widths rather than compute any. Word draws those tables a
 //! few points into the right margin, on the paper and fully visible; nothing is
-//! lost and nothing needs guarding. Normalising them to the text column would
-//! move 40 tables of real Word output to a width no reading of §17.4.52 asks
-//! for.
+//! lost and nothing needs guarding.
 //!
 //! So the guard is drawn at the one line every reading agrees on: content that
-//! leaves the paper is lost, whatever the layout algorithm was supposed to be.
-//! What the *right* width for an overflowing auto table is remains open, and a
-//! **Word render** of one — at `tblLayout` both `fixed` and `autofit` — is what
-//! would settle it.
+//! leaves the paper is lost. Word itself draws T3 past the paper's edge, so this
+//! is a decision to keep content Word loses, not a reading of Word.
 
 use std::io::Write;
 
@@ -67,11 +66,11 @@ fn make_docx(document_xml: &str) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-/// A one-row table with the given `<w:gridCol>`s and `w:tblW`, bordered so its
-/// extent is drawn rather than inferred. No `<w:sectPr>`, so the page is the
-/// §17.6.13 default Letter with 1-inch margins: 612 pt wide, text column
-/// 72…540, paper edge 612.
-fn table(tbl_w: &str, grid: &str) -> Vec<u8> {
+/// A one-row table with the given `<w:gridCol>`s, `w:tblW` and `w:tblLayout`
+/// (`FIXED`, or `""` for autofit), bordered so its extent is drawn rather than
+/// inferred. No `<w:sectPr>`, so the page is the §17.6.13 default Letter with
+/// 1-inch margins: 612 pt wide, text column 72…540, paper edge 612.
+fn table(tbl_w: &str, layout: &str, grid: &str) -> Vec<u8> {
     let cells: String = grid
         .matches("<w:gridCol")
         .enumerate()
@@ -84,6 +83,7 @@ fn table(tbl_w: &str, grid: &str) -> Vec<u8> {
     <w:tbl>
       <w:tblPr>
         {tbl_w}
+        {layout}
         <w:tblBorders>
           <w:top w:val="single" w:sz="4" w:color="000000"/>
           <w:left w:val="single" w:sz="4" w:color="000000"/>
@@ -100,6 +100,8 @@ fn table(tbl_w: &str, grid: &str) -> Vec<u8> {
 </w:document>"#
     ))
 }
+
+const FIXED: &str = r#"<w:tblLayout w:type="fixed"/>"#;
 
 fn layout(bytes: &[u8]) -> Vec<LayoutedPage> {
     let parsed = dxpdf::docx::parse(bytes).expect("parse");
@@ -141,13 +143,13 @@ fn drawn_right_edge(pages: &[LayoutedPage]) -> f32 {
 /// `<w:tblW w:type="auto"/>` drew the table to x=1072 on a 612 pt page, so
 /// 460 pt of it — borders, cell, text — fell off the paper and out of the PDF.
 ///
-/// Nothing in §17.4.63 or §17.4.52 licenses drawing off the page; the width to
-/// use instead is genuinely open (see this file's header), and only the
-/// containment is asserted here.
+/// Fixed, because an autofit table never gets that far (below). Word draws it
+/// off the paper too; only the containment is asserted here.
 #[test]
 fn an_auto_table_wider_than_the_page_is_kept_on_the_page() {
     let pages = layout(&table(
         r#"<w:tblW w:w="0" w:type="auto"/>"#,
+        FIXED,
         r#"<w:gridCol w:w="20000"/>"#,
     ));
     let page_width = pages[0].page_size.width.raw();
@@ -180,6 +182,7 @@ fn an_auto_table_wider_than_the_page_is_kept_on_the_page() {
 fn an_auto_table_that_overflows_the_margin_but_not_the_paper_is_untouched() {
     let pages = layout(&table(
         r#"<w:tblW w:w="0" w:type="auto"/>"#,
+        FIXED,
         r#"<w:gridCol w:w="10000"/>"#,
     ));
 
@@ -193,6 +196,26 @@ fn an_auto_table_that_overflows_the_margin_but_not_the_paper_is_untouched() {
     );
 }
 
+/// The same grid autofit is shrunk to the text column, as Word shrinks
+/// `table-widths.docx`'s T4 — in this compatibility-mode document, the column
+/// plus the first and last cells' text insets, 0.25 pt each (half the border,
+/// there being no cell margins), the width a 100% table takes.
+#[test]
+fn an_autofit_table_wider_than_the_column_is_shrunk_to_it() {
+    let pages = layout(&table(
+        r#"<w:tblW w:w="0" w:type="auto"/>"#,
+        "",
+        r#"<w:gridCol w:w="10000"/>"#,
+    ));
+
+    assert!(
+        (drawn_right_edge(&pages) - 540.5).abs() < 0.01,
+        "autofit table not shrunk to the column: right edge {:.2}, expected {:.2}",
+        drawn_right_edge(&pages),
+        540.5,
+    );
+}
+
 /// And an auto table that fits keeps its grid to the point — the guard must be
 /// invisible to every document that never trips it, which is all but three of
 /// the 52 in the corpus.
@@ -200,6 +223,7 @@ fn an_auto_table_that_overflows_the_margin_but_not_the_paper_is_untouched() {
 fn an_auto_table_that_fits_keeps_its_declared_grid() {
     let pages = layout(&table(
         r#"<w:tblW w:w="0" w:type="auto"/>"#,
+        "",
         r#"<w:gridCol w:w="3000"/><w:gridCol w:w="3000"/>"#,
     ));
 
@@ -222,6 +246,7 @@ fn an_auto_table_that_fits_keeps_its_declared_grid() {
 fn a_declared_width_wider_than_the_page_is_left_to_its_own_scaling() {
     let pages = layout(&table(
         r#"<w:tblW w:w="20000" w:type="dxa"/>"#,
+        "",
         r#"<w:gridCol w:w="20000"/>"#,
     ));
 

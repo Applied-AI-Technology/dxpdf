@@ -309,16 +309,15 @@ fn grid_before_and_after_count_toward_seating() {
 }
 
 /// A grid with *more* columns than a row uses still seats every cell in that
-/// row — the row simply ends early, which is what `gridAfter` says explicitly
-/// and what a producer omitting it leaves implicit.
+/// row — the row simply ends early.
 ///
 /// Pinned because it is the shape most easily confused with the one the repair
 /// exists for, and it is deliberately **not** repaired: every cell has a
 /// column, so the seating invariant holds and there is nothing
-/// self-contradictory to fix. Note the 4000-twip `tcW` on each cell disagrees
-/// with its 2000-twip grid column and is ignored — that is §17.4.71's
-/// unresolved conflict, and resolving it needs a **Word reference render**, not
-/// this repair.
+/// self-contradictory to fix. The 4000-twip `tcW` on each cell disagrees with
+/// its 2000-twip grid column, and the cell's width wins; the two columns the row
+/// leaves empty take nothing, so the cells fill the 400pt `tblW` — Word draws
+/// this table, `test-files/table-widths.docx` T12, at 200 + 200.
 #[test]
 fn a_row_shorter_than_the_grid_is_left_short() {
     let pages = layout(&table_doc(
@@ -333,8 +332,8 @@ fn a_row_shorter_than_the_grid_is_left_short() {
 
     assert_cells(
         &first_row_cells(&pages),
-        &[(72.0, 100.0), (172.0, 100.0)],
-        "a short row keeps its grid columns and stops",
+        &[(72.0, 200.0), (272.0, 200.0)],
+        "a short row's cells take their tcW and the table's width",
     );
 }
 
