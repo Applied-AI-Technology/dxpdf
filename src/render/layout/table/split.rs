@@ -11,7 +11,7 @@ use crate::render::dimension::Pt;
 use crate::render::layout::draw_command::DrawCommand;
 use crate::render::layout::section::CellLine;
 
-use super::borders::CellBorders;
+use super::borders::{border_width, CellBorders};
 use super::types::{CellLayoutEntry, MeasuredRow, TableRowInput};
 
 /// Options for finding a row cut.
@@ -96,12 +96,31 @@ pub(super) fn find_row_cut(input: &RowCutInput<'_>) -> Option<SplitCut> {
     // visible height on the first half; otherwise their content (image,
     // path, etc.) would overflow the cut-edge border.
     let mut non_splittable_heights: Vec<Pt> = Vec::with_capacity(input.row.cells.len());
+    // §17.4.38: the borders the first half draws inside its box take room on
+    // the page like its margins do, and add to them (`measure_table_rows`):
+    // each cell's own top, and at the cut the widest bottom edge, which the
+    // half draws at its foot (`emit_one_row`'s `row_dy_bottom`). Word fits
+    // nine 12pt lines of `split-row-valign.docx` into the 120pt left on its
+    // pages, not ten, for their two 0.5pt rules.
+    let bottom_border = input
+        .mr
+        .borders
+        .iter()
+        .map(|b| border_width(b.bottom))
+        .fold(Pt::ZERO, Pt::max);
 
-    for (entry, cell) in input.mr.entries.iter().zip(&input.row.cells) {
+    for ((entry, cell), borders) in input
+        .mr
+        .entries
+        .iter()
+        .zip(&input.row.cells)
+        .zip(&input.mr.borders)
+    {
         match cut_for_cell(
             entry,
             cell.margins.top,
             cell.margins.bottom,
+            border_width(borders.top) + bottom_border,
             input.available,
         ) {
             Some((cut, half_h)) => {
@@ -117,7 +136,11 @@ pub(super) fn find_row_cut(input: &RowCutInput<'_>) -> Option<SplitCut> {
                 // Cell's natural visible height (content + vertical margins)
                 // must fit on the first half — we can't cut through an
                 // image or shape.
-                let required = entry.layout.content_height + cell.margins.top + cell.margins.bottom;
+                let required = entry.layout.content_height
+                    + cell.margins.top
+                    + cell.margins.bottom
+                    + border_width(borders.top)
+                    + bottom_border;
                 non_splittable_heights.push(required);
             }
         }
@@ -161,12 +184,15 @@ fn cut_for_cell(
     entry: &CellLayoutEntry,
     margin_top: Pt,
     margin_bottom: Pt,
+    borders: Pt,
     available: Pt,
 ) -> Option<(CellCut, Pt)> {
-    // Space available for the content between both margins, since the first
-    // half reproduces the cell's natural layout (top margin, retained lines,
-    // bottom margin) — same as a non-split cell rendering those lines.
-    let budget = available - margin_top - margin_bottom;
+    // Space available for the content between both margins and the borders
+    // drawn inside them, since the first half reproduces the cell's natural
+    // layout (top margin, retained lines, bottom margin) — same as a non-split
+    // cell rendering those lines.
+    let insets = margin_top + margin_bottom + borders;
+    let budget = available - insets;
     if budget <= Pt::ZERO {
         return None;
     }
@@ -198,7 +224,7 @@ fn cut_for_cell(
     // margin; the partition threshold sits at `margin_top + cont_top` (draw
     // commands are margin-shifted, the cut model is not).
     let shift = cont_top;
-    let half_h = cont_top + margin_top + margin_bottom;
+    let half_h = cont_top + insets;
     Some((
         CellCut::CutAt {
             content_cut_y: margin_top + cont_top,
@@ -702,7 +728,7 @@ mod tests {
             content_dx: Pt::ZERO,
         };
         assert!(
-            cut_for_cell(&entry, Pt::ZERO, Pt::ZERO, Pt::new(100.0)).is_none(),
+            cut_for_cell(&entry, Pt::ZERO, Pt::ZERO, Pt::ZERO, Pt::new(100.0)).is_none(),
             "a zero-offset cut must be rejected - accepting it gives shift == 0 \
              and the continuation loop never progresses"
         );
