@@ -82,6 +82,33 @@ pub(super) struct TextRunStyle {
     pub shading: Option<ResolvedShading>,
     pub border: Option<FragmentBorder>,
     pub baseline_offset: Pt,
+    pub capitals: Capitals,
+}
+
+/// §17.3.2.5 `w:caps` / §17.3.2.33 `w:smallCaps`: how a run's letters are
+/// drawn. The document keeps the text in the case it was written in; Word
+/// draws the capitals, and its PDF extracts them, so the fragments carry them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(super) enum Capitals {
+    #[default]
+    AsWritten,
+    /// Every letter in its capital form.
+    All,
+    /// Lowercase letters as capitals at [`SMALL_CAPS_SCALE`] of the run's
+    /// size; capitals, digits and punctuation stay full size.
+    Small,
+}
+
+/// The size Word draws small capitals at, and the spaces among them: 0.8 of
+/// the run's, as `test-files/paragraph-defaults-none.docx` G3 (10pt → 8pt)
+/// and G5 (20pt → 16pt) measure.
+const SMALL_CAPS_SCALE: f32 = 0.8;
+
+/// Whether small capitals draw `c` reduced: a lowercase letter, or a space —
+/// Word sets the spaces of a small-caps run at the reduced size too, after a
+/// capital as much as between lowercase letters (G3's "G3 ").
+fn small_cap(c: char) -> bool {
+    c.is_lowercase() || c == ' '
 }
 
 /// Split text into UAX #14 break units and push to the output vec.
@@ -246,7 +273,86 @@ fn push_text_fragment<F>(
 ) where
     F: Fn(&str, &FontProps) -> (Pt, TextMetrics),
 {
+    match style.capitals {
+        Capitals::AsWritten => push_measured_fragment(
+            text,
+            break_after,
+            font,
+            None,
+            style,
+            hyperlink_url,
+            measure_text,
+            fragments,
+        ),
+        Capitals::All => push_measured_fragment(
+            &text.to_uppercase(),
+            break_after,
+            font,
+            None,
+            style,
+            hyperlink_url,
+            measure_text,
+            fragments,
+        ),
+        Capitals::Small => {
+            // One fragment per stretch of reduced and of full-size letters,
+            // nothing breakable between them: the unit is still one word.
+            let small = Rc::new(FontProps {
+                size: font.size * SMALL_CAPS_SCALE,
+                ..(**font).clone()
+            });
+            let mut pieces = Vec::new();
+            let mut start = 0;
+            for (i, c) in text.char_indices().skip(1) {
+                let previous = text[..i].chars().next_back().is_some_and(small_cap);
+                if small_cap(c) != previous {
+                    pieces.push(&text[start..i]);
+                    start = i;
+                }
+            }
+            pieces.push(&text[start..]);
+            let last = pieces.len() - 1;
+            for (n, piece) in pieces.into_iter().enumerate() {
+                let reduced = piece.chars().next().is_some_and(small_cap);
+                push_measured_fragment(
+                    &piece.to_uppercase(),
+                    if n == last {
+                        break_after
+                    } else {
+                        BreakAfter::Prohibited
+                    },
+                    if reduced { &small } else { font },
+                    // A line holding only small capitals is as tall as the
+                    // run's own size would make it, not the reduced one.
+                    reduced.then(|| measure_text("X", font).1),
+                    style,
+                    hyperlink_url,
+                    measure_text,
+                    fragments,
+                );
+            }
+        }
+    }
+}
+
+/// [`push_text_fragment`] once the text is in the case it is drawn in.
+/// `line_metrics` stands in for the face's own where the line must be sized
+/// by a size other than the one drawn.
+#[allow(clippy::too_many_arguments)]
+fn push_measured_fragment<F>(
+    text: &str,
+    break_after: BreakAfter,
+    font: &Rc<FontProps>,
+    line_metrics: Option<TextMetrics>,
+    style: &TextRunStyle,
+    hyperlink_url: Option<&LinkTarget>,
+    measure_text: &F,
+    fragments: &mut Vec<Fragment>,
+) where
+    F: Fn(&str, &FontProps) -> (Pt, TextMetrics),
+{
     let (width, metrics) = measure_text(text, font);
+    let metrics = line_metrics.unwrap_or(metrics);
     let trimmed = text.trim_end();
     let trimmed_width = if trimmed.len() < text.len() {
         measure_text(trimmed, font).0
@@ -431,6 +537,95 @@ mod tests {
         assert!(units("").is_empty());
     }
 
+    // ── §17.3.2.5 / §17.3.2.33 capitals ──────────────────────────────────
+
+    /// Each fragment `text` emits with `capitals`: its text, size, break
+    /// status and ascent. The measurer's ascent is the size, so the ascent
+    /// says which size the line is sized by.
+    fn capitalised(text: &str, capitals: Capitals) -> Vec<(String, f32, BreakAfter, f32)> {
+        let mut fragments = Vec::new();
+        let measure = |t: &str, f: &FontProps| {
+            (
+                f.size * t.chars().count() as f32 * 0.5,
+                TextMetrics {
+                    ascent: f.size,
+                    descent: Pt::ZERO,
+                    leading: Pt::ZERO,
+                },
+            )
+        };
+        let style = TextRunStyle {
+            capitals,
+            ..style()
+        };
+        emit_text_words(
+            text,
+            &font("Calibri", 10.0),
+            &style,
+            None,
+            &measure,
+            &mut fragments,
+        );
+        fragments
+            .iter()
+            .map(|f| match f {
+                Fragment::Text {
+                    text,
+                    font,
+                    break_after,
+                    metrics,
+                    ..
+                } => (
+                    text.to_string(),
+                    font.size.raw(),
+                    *break_after,
+                    metrics.ascent.raw(),
+                ),
+                other => panic!("expected Text, got {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn caps_draw_every_letter_as_a_capital() {
+        use BreakAfter::Opportunity as O;
+        assert_eq!(
+            capitalised("G2 Record of", Capitals::All),
+            [
+                ("G2 ".into(), 10.0, O, 10.0),
+                ("RECORD ".into(), 10.0, O, 10.0),
+                ("OF".into(), 10.0, O, 10.0),
+            ],
+        );
+    }
+
+    /// Word's G3: lowercase letters and every space at 0.8 of the size, the
+    /// capitals and digits whole, and a word still breakable only where it
+    /// was — after its space.
+    #[test]
+    fn small_caps_reduce_lowercase_letters_and_spaces() {
+        use BreakAfter::{Opportunity as O, Prohibited as P};
+        assert_eq!(
+            capitalised("G3 Record Of", Capitals::Small),
+            [
+                ("G3".into(), 10.0, P, 10.0),
+                (" ".into(), 8.0, O, 10.0),
+                ("R".into(), 10.0, P, 10.0),
+                ("ECORD ".into(), 8.0, O, 10.0),
+                ("O".into(), 10.0, P, 10.0),
+                ("F".into(), 8.0, O, 10.0),
+            ],
+        );
+    }
+
+    #[test]
+    fn small_caps_leave_a_capitalised_word_whole() {
+        assert_eq!(
+            capitalised("NASA42", Capitals::Small),
+            [("NASA42".into(), 10.0, BreakAfter::Opportunity, 10.0)],
+        );
+    }
+
     /// The gap #130 closes, at the layer that builds the fragments: a Thai
     /// paragraph used to be a single unbreakable unit, and only wrapped
     /// because `split_oversized_fragments` cut it into clusters mid-word.
@@ -515,6 +710,7 @@ mod tests {
             shading: None,
             border: None,
             baseline_offset: Pt::ZERO,
+            capitals: Capitals::AsWritten,
         }
     }
 

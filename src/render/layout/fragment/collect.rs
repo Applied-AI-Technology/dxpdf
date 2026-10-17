@@ -12,7 +12,7 @@ use crate::render::resolve::shading::{resolve_shading, ResolvedShading};
 use super::segment::{build_inline_units, InlineUnit, SegmentPiece};
 use super::text::{
     emit_emoji_or_fallback, emit_text_fragments, emit_text_unit, emit_text_words,
-    resolve_highlight_color, TextRunStyle,
+    resolve_highlight_color, Capitals, TextRunStyle,
 };
 use super::LineBreakOrigin;
 use super::{
@@ -204,11 +204,22 @@ where
     // §17.3.2.4: run-level border (filtered to drop the no-border styles).
     let border = run_border_to_fragment(effective_props.border.get());
 
+    // §17.3.2.5 / §17.3.2.33: the two are exclusive by the spec; a run
+    // stating both is drawn in full capitals.
+    let capitals = if effective_props.all_caps == Some(true) {
+        Capitals::All
+    } else if effective_props.small_caps == Some(true) {
+        Capitals::Small
+    } else {
+        Capitals::AsWritten
+    };
+
     let text_style = TextRunStyle {
         color,
         shading,
         border,
         baseline_offset,
+        capitals,
     };
     (font, text_style)
 }
@@ -422,6 +433,7 @@ fn emit_field_substitution<F>(
                 shading: None,
                 border: None,
                 baseline_offset: Pt::ZERO,
+                capitals: Capitals::AsWritten,
             },
         ),
     };

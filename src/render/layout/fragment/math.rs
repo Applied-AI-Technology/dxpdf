@@ -8,7 +8,7 @@ use crate::model::{MathBlock, MathElement, DEFAULT_MATH_FONT};
 use crate::render::dimension::Pt;
 use crate::render::fonts::Toggle;
 
-use super::text::{emit_text_words, TextRunStyle};
+use super::text::{emit_text_words, Capitals, TextRunStyle};
 use super::{
     BreakAfter, FontProps, Fragment, FragmentCtx, LinkTarget, MathRow, TextMetrics,
     FRACTION_GAP_RATIO, FRACTION_RULE_RATIO, FRACTION_SIDE_PAD_RATIO, MATH_AXIS_RATIO,
@@ -84,6 +84,7 @@ fn emit_elements<F>(
                     shading: None,
                     border: None,
                     baseline_offset,
+                    capitals: Capitals::AsWritten,
                 };
                 emit_text_words(
                     &mapped,
@@ -435,6 +436,7 @@ mod tests {
             shading: None,
             border: None,
             baseline_offset: Pt::ZERO,
+            capitals: Capitals::AsWritten,
         };
         emit_text_words(
             "word",

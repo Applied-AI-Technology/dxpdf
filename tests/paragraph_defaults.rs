@@ -80,7 +80,7 @@ fn a_compatibility_mode_does_not_change_them() {
 #[test]
 fn a_wrapped_paragraph_takes_the_default_line() {
     let p = pages("none");
-    let f = baseline(&p, "F");
+    let f = baseline(&p, "wraps");
     let mut lines: Vec<f32> = p[0]
         .commands
         .iter()
