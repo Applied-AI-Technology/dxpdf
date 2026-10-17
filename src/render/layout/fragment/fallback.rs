@@ -628,6 +628,7 @@ mod tests {
 
     fn font(family: &str) -> Rc<FontProps> {
         Rc::new(FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             family: Rc::from(family),

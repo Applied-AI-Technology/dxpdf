@@ -557,6 +557,7 @@ mod tests {
             text: text.into(),
             break_after: crate::render::layout::fragment::fixture_break_after(text),
             font: Rc::new(FontProps {
+                vertical: None,
                 features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
@@ -599,6 +600,7 @@ mod tests {
     /// a hyperlinked equation independently of the OMML→fragment path.
     fn math_fraction_frag(hyperlink_url: Option<LinkTarget>) -> Fragment {
         let font = Rc::new(FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,
@@ -2418,6 +2420,7 @@ mod tests {
     /// inherits it cannot pass by coincidence.
     fn leader_font(family: &str, size: f32) -> Rc<FontProps> {
         Rc::new(FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,

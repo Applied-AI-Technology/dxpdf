@@ -551,6 +551,7 @@ mod tests {
 
     fn text_frag(s: &str) -> Fragment {
         let font = FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,

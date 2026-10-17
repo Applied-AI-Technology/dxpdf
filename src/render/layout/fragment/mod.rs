@@ -268,6 +268,15 @@ pub struct FontProps {
     /// §17.3.2.19 kerning and `w14:ligatures` — applied by
     /// `layout::fragment::shape`.
     pub features: crate::render::shape::TypographicFeatures,
+    /// The line metrics of the face the run is set in, where its glyphs are
+    /// drawn from another: a list label in a legacy symbol face, whose
+    /// private-use text is remapped into a text face
+    /// (`build::convert::legacy_font_line_metrics`). The measurer gives the
+    /// run these rather than the drawing face's, so the line stands as tall as
+    /// Word sets it in the original. Carried here rather than on the fragment
+    /// because every pass that re-faces or re-measures a fragment copies its
+    /// `FontProps` — `fragment::fallback`, `fragment::split`.
+    pub vertical: Option<crate::render::fonts::VerticalMetrics>,
 }
 
 /// Font metrics for a specific font at a specific size.
@@ -775,6 +784,7 @@ pub fn font_props_from_run(
     let text_scale = rp.text_scale.cloned().map_or(1.0, |s| s.as_factor());
 
     FontProps {
+        vertical: None,
         // §17.3.2.13/.18/.23/.31 (issue #148): the four legacy effects,
         // resolved with their exclusivity precedence.
         effects: TextEffects::from_run(rp),
@@ -975,6 +985,7 @@ mod tests {
     #[test]
     fn font_props_reaches_into_a_math_fraction() {
         let font = Rc::new(FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             family: Rc::from("Cambria Math"),

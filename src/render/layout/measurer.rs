@@ -143,7 +143,19 @@ impl<'r> TextMeasurer<'r> {
                 widths: FxHashMap::default(),
             }
         });
-        let text_metrics = fc.metrics;
+        // The face the run is set in decides its line, where that is not the
+        // face drawing it (`FontProps::vertical`).
+        let text_metrics = match font_props.vertical {
+            Some(v) => {
+                let size = f32::from(font_props.size);
+                TextMetrics {
+                    ascent: Pt::new(v.ascent * size),
+                    descent: Pt::new(v.descent * size),
+                    leading: Pt::new(v.line_gap * size),
+                }
+            }
+            None => fc.metrics,
+        };
         let width = match fc.widths.get(text) {
             Some(&w) => w,
             None => {
@@ -469,6 +481,7 @@ mod tests {
 
     fn fp_at_scale(scale: f32) -> FontProps {
         FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,

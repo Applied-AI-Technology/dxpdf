@@ -381,6 +381,7 @@ fn build_note_blocks(
                 // §17.8.3.2 / §17.3.2.14: fall back to the document-level spec
                 // defaults rather than restating a font name here.
                 let font = frags[0].font_props().cloned().unwrap_or_else(|| FontProps {
+                    vertical: None,
                     features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,

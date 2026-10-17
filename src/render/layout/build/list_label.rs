@@ -36,7 +36,9 @@ use crate::model::{self, ParagraphProperties};
 use crate::render::dimension::Pt;
 use crate::render::layout::fragment::Fragment;
 
-use super::convert::{pic_bullet_size, remap_legacy_font_chars, resolve_paragraph_defaults};
+use super::convert::{
+    legacy_font_line_metrics, pic_bullet_size, remap_legacy_font_chars, resolve_paragraph_defaults,
+};
 use super::{BuildContext, BuildState};
 
 /// Inject list label fragments into a paragraph if it has a numbering reference.
@@ -400,6 +402,9 @@ fn inject_text_label(
     if label_family != *label_font.family {
         label_font.family = Rc::from(label_family.as_str());
     }
+    // Whatever face draws it, a label in a legacy symbol face is laid out in
+    // that face's line, as Word sets it.
+    label_font.vertical = legacy_font_line_metrics(cascade_family);
     // §17.3.2.40: populate underline metrics from font metrics now that
     // the bool is settled — `populate_underline_metrics` (used by
     // `build_fragments`) ran before label injection, so this fragment

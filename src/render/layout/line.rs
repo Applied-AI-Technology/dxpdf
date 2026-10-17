@@ -442,6 +442,7 @@ mod tests {
         let row = |text: &str| crate::render::layout::fragment::MathRow {
             text: text.into(),
             font: Rc::new(FontProps {
+                vertical: None,
                 features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
@@ -486,6 +487,7 @@ mod tests {
             text: text.into(),
             break_after,
             font: Rc::new(FontProps {
+                vertical: None,
                 features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
@@ -526,6 +528,7 @@ mod tests {
             leader: crate::model::TabLeader::None,
             line_height: Pt::ZERO,
             font: Rc::new(FontProps {
+                vertical: None,
                 features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
@@ -751,6 +754,7 @@ mod tests {
             Fragment::Tab {
                 line_height: Pt::new(14.0),
                 font: Rc::new(FontProps {
+                    vertical: None,
                     features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,
@@ -786,6 +790,7 @@ mod tests {
                 text: "small".into(),
                 break_after: BreakAfter::Prohibited,
                 font: Rc::new(FontProps {
+                    vertical: None,
                     features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,
@@ -821,6 +826,7 @@ mod tests {
                 text: "big".into(),
                 break_after: BreakAfter::Prohibited,
                 font: Rc::new(FontProps {
+                    vertical: None,
                     features: Default::default(),
                     effects: Default::default(),
                     rtl: crate::render::fonts::Toggle::Absent,

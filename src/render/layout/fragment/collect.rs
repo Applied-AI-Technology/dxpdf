@@ -403,6 +403,7 @@ fn emit_field_substitution<F>(
         ),
         _ => (
             FontProps {
+                vertical: None,
                 features: Default::default(),
                 effects: Default::default(),
                 rtl: crate::render::fonts::Toggle::Absent,
@@ -452,6 +453,7 @@ where
     F: Fn(&str, &FontProps) -> (Pt, TextMetrics),
 {
     let font = FontProps {
+        vertical: None,
         features: Default::default(),
         effects: Default::default(),
         rtl: crate::render::fonts::Toggle::Absent,
@@ -1045,6 +1047,7 @@ where
                 }
                 Inline::Symbol(sym) => {
                     let font = FontProps {
+                        vertical: None,
                         features: Default::default(),
                         effects: Default::default(),
                         rtl: crate::render::fonts::Toggle::Absent,
@@ -1100,6 +1103,7 @@ where
                     // §17.11.12: footnote reference uses superscript sizing.
                     let ref_size = default_size * super::SUPERSCRIPT_FONT_SIZE_RATIO;
                     let ref_font = FontProps {
+                        vertical: None,
                         features: Default::default(),
                         effects: Default::default(),
                         rtl: crate::render::fonts::Toggle::Absent,
@@ -1145,6 +1149,7 @@ where
                     let num_text = to_roman_lower(*endnote_counter);
                     let ref_size = default_size * super::SUPERSCRIPT_FONT_SIZE_RATIO;
                     let ref_font = FontProps {
+                        vertical: None,
                         features: Default::default(),
                         effects: Default::default(),
                         rtl: crate::render::fonts::Toggle::Absent,

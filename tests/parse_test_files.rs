@@ -450,6 +450,7 @@ const ALL_FILES: &[&str] = &[
     "ligatures-15.docx",
     "ligatures-14.docx",
     "ligatures-14otf.docx",
+    "symbol-bullet.docx",
 ];
 
 #[test]

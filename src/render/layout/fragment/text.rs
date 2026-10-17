@@ -493,6 +493,7 @@ mod tests {
 
     fn font(family: &str, size: f32) -> FontProps {
         FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             rtl: crate::render::fonts::Toggle::Absent,

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::i18n::bidi::BaseDirection;
 use crate::model::{self, FirstLineIndent, LineSpacing};
 use crate::render::dimension::Pt;
+use crate::render::fonts::VerticalMetrics;
 use crate::render::geometry::PtSize;
 use crate::render::layout::build::BuildState;
 use crate::render::layout::fragment::Fragment;
@@ -674,6 +675,31 @@ pub(super) fn remap_legacy_font_chars(
         fallback_family
     };
     (remapped, family.to_string())
+}
+
+/// The line metrics of the legacy symbol face `font_family` names, as Word
+/// sets them: the `hhea` ascender, descender and line gap of the copies Word
+/// for Mac 16 bundles, which are what it lays a run in the face out with.
+///
+/// [`remap_legacy_font_chars`] moves such text out of the face, so whatever
+/// draws it — a text face, or the host's own Symbol, which on a Mac is a
+/// different face (1436/612 of 2048) — does not stand the line as tall as
+/// Word does. Word's announcement-letter template steps 16.08pt for a Calibri
+/// 11pt line at 1.15 behind an 11pt Symbol bullet, Symbol's ascent over
+/// Calibri's descent, against 15.44pt for the same line without it.
+pub(super) fn legacy_font_line_metrics(font_family: &str) -> Option<VerticalMetrics> {
+    let units = |ascent: f32, descent: f32| VerticalMetrics {
+        ascent: ascent / 2048.0,
+        descent: descent / 2048.0,
+        line_gap: 0.0,
+    };
+    if font_family.eq_ignore_ascii_case("Symbol") {
+        Some(units(2059.0, 450.0))
+    } else if font_family.eq_ignore_ascii_case("Wingdings") {
+        Some(units(1841.0, 432.0))
+    } else {
+        None
+    }
 }
 
 /// The PUA block Word uses for legacy symbol-font encodings: character code

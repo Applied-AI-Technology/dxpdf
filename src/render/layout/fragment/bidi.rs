@@ -308,6 +308,7 @@ mod tests {
 
     fn font(rtl: Toggle) -> Rc<FontProps> {
         Rc::new(FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             family: Rc::from("Test"),

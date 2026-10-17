@@ -48,6 +48,7 @@ pub(super) fn emit_math_fragments<F>(
 /// Math has none.
 fn math_font(size: Pt) -> FontProps {
     FontProps {
+        vertical: None,
         features: Default::default(),
         effects: Default::default(),
         rtl: Toggle::Absent,

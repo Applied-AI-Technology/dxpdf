@@ -497,6 +497,7 @@ mod tests {
         use std::rc::Rc;
 
         let font = Rc::new(FontProps {
+            vertical: None,
             features: Default::default(),
             effects: Default::default(),
             rtl: Toggle::Absent,

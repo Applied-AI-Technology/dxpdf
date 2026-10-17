@@ -385,6 +385,7 @@ mod tests {
             level,
             text: Rc::from(text),
             font: Rc::new(FontProps {
+                vertical: None,
                 features: Default::default(),
                 effects: Default::default(),
                 family: Rc::from("Test"),
