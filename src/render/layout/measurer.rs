@@ -117,13 +117,14 @@ impl<'r> TextMeasurer<'r> {
         font_props: &FontProps,
     ) -> (Pt, super::fragment::TextMetrics) {
         let mut font_cache = self.font_cache.borrow_mut();
-        let (slot, font) = font_cache.get_indexed(
+        let (slot, _) = font_cache.get_indexed(
             self.registry,
             &font_props.family,
             font_props.size,
             font_props.bold,
             font_props.italic,
         );
+        let font = font_cache.font(slot);
 
         // Metrics depend only on the font; the raw `measure_str` width only on
         // (font, text). Both are memoized per font slot so a repeated word
@@ -132,12 +133,12 @@ impl<'r> TextMeasurer<'r> {
         // nothing; only a first-seen word allocates a `Box<str>` key.
         let mut cache = self.measure_cache.borrow_mut();
         let fc = cache.entry(slot).or_insert_with(|| {
-            let (_, m) = font.metrics();
+            let m = font_cache.line_metrics(slot);
             FontMeasureCache {
                 metrics: TextMetrics {
-                    ascent: Pt::new(-m.ascent),
-                    descent: Pt::new(m.descent),
-                    leading: Pt::new(m.leading.max(0.0)),
+                    ascent: m.ascent,
+                    descent: m.descent,
+                    leading: m.leading,
                 },
                 widths: FxHashMap::default(),
             }
@@ -353,9 +354,10 @@ impl<'r> TextMeasurer<'r> {
     /// font-recommended height.
     pub fn default_line_height(&self, family: &str, size: Pt) -> Pt {
         let mut cache = self.font_cache.borrow_mut();
-        let font = cache.get(self.registry, family, size, Toggle::Absent, Toggle::Absent);
-        let (_, metrics) = font.metrics();
-        Pt::new(-metrics.ascent + metrics.descent + metrics.leading.max(0.0))
+        let (slot, _) =
+            cache.get_indexed(self.registry, family, size, Toggle::Absent, Toggle::Absent);
+        let m = cache.line_metrics(slot);
+        m.ascent + m.descent + m.leading
     }
 
     // ─── Emoji pipeline integration ────────────────────────────────────────

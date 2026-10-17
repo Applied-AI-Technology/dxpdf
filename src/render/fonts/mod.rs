@@ -19,7 +19,7 @@
 //! 2. [`catalog`] describes what the host and the document offer, reading each
 //!    face's own OpenType tables through [`opentype`] when a request needs more
 //!    than a family name.
-//! 3. [`resolve`] runs the eight-step chain and names one [`FaceRecord`].
+//! 3. [`resolve`] runs the nine-step chain and names one [`FaceRecord`].
 //! 4. This module opens it — positionally, and where the record is a named
 //!    instance, baking its coordinates into a static SFNT (`instance_bake`)
 //!    so embedding is correct too, not just measurement and paint. A named
@@ -45,12 +45,13 @@ pub mod request;
 pub mod resolve;
 mod substitutes;
 
-pub use cache::FontCache;
+pub use cache::{FontCache, LineMetrics};
 pub use catalog::{FaceCatalog, FaceLookup, FaceRef};
 pub use face::{FaceIdentity, FaceName, FaceRecord, IntrinsicStyle, NameKind, VariationInstance};
 pub use instance_bake::InstanceBakeFailure;
 pub use request::{EffectiveStyle, FaceRequest, Synthesis, Toggle};
 pub use resolve::{FaceResolution, FallbackReason, ResolutionStep, Selection};
+pub use substitutes::VerticalMetrics;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -132,6 +133,12 @@ pub struct TypefaceEntry {
     /// overwrite it with the value a specific request's `Synthesis::compute`
     /// produces, since only they know what was asked.
     pub synthesis: Synthesis,
+    /// Line metrics to measure with instead of the typeface's own — set when
+    /// the face is a look-alike standing in for one it is not
+    /// (`LOOKALIKE_SUBSTITUTIONS`), so a line holding it stands as tall as the
+    /// original makes it. Per request, like `synthesis`, and for the same
+    /// reason: the face opened is shared, the stand-in role is not.
+    pub vertical: Option<VerticalMetrics>,
 }
 
 impl TypefaceEntry {
@@ -142,6 +149,7 @@ impl TypefaceEntry {
             origin: TypefaceOrigin::System { typeface_id },
             instance: InstanceState::NotInstanced,
             synthesis: Synthesis::default(),
+            vertical: None,
         }
     }
 }
@@ -491,6 +499,10 @@ impl FontRegistry {
                     // here instead, against this request's own toggles, and
                     // set on the (already-cloned) entry this call owns.
                     entry.synthesis = Synthesis::compute(request, &selection.record.intrinsic);
+                    if let resolve::ResolutionStep::Lookalike { via, .. } = selection.step {
+                        entry.vertical =
+                            substitutes::lookalikes_for(via).map(|lookalike| lookalike.vertical);
+                    }
                     return entry;
                 }
                 // The catalogue named a face the manager then declined to open.
@@ -525,7 +537,7 @@ impl FontRegistry {
         }
     }
 
-    /// Step 8: whatever the host offers when nothing matched.
+    /// Step 9: whatever the host offers when nothing matched.
     fn host_default(&self, request: &FaceRequest<'_>) -> TypefaceEntry {
         // Unreachable for a registry from `FontRegistry::build`, which rejects a
         // font-less `FontMgr` up front so this arm always has something to
@@ -610,6 +622,7 @@ impl FontRegistry {
                 origin,
                 instance: InstanceState::NotInstanced,
                 synthesis: Synthesis::default(),
+                vertical: None,
             });
         };
 
@@ -653,6 +666,7 @@ impl FontRegistry {
                     origin: TypefaceOrigin::System { typeface_id },
                     instance: InstanceState::Baked(instance.clone()),
                     synthesis: Synthesis::default(),
+                    vertical: None,
                 })
             }
             Err(reason) => {
@@ -686,6 +700,7 @@ impl FontRegistry {
                                 reason,
                             },
                             synthesis: Synthesis::default(),
+                            vertical: None,
                         })
                     }
                     None => {
@@ -700,6 +715,7 @@ impl FontRegistry {
                             origin,
                             instance: InstanceState::NotInstanced,
                             synthesis: Synthesis::default(),
+                            vertical: None,
                         })
                     }
                 }
@@ -1572,6 +1588,10 @@ pub(crate) mod tests {
         assert!(!is_exact_step(&Substitution {
             via: "Calibri",
             substitute: "Carlito"
+        }));
+        assert!(!is_exact_step(&Lookalike {
+            via: "Bradley Hand ITC",
+            substitute: "Indie Flower"
         }));
     }
 

@@ -20,7 +20,7 @@
 //! **how the engine came to know that name**, because that is exactly what
 //! decides which resolution step may use it. A PostScript name read from the
 //! font is evidence; a name composed from a family and a style word is a guess,
-//! and the eight-step chain runs the evidence first.
+//! and the nine-step chain runs the evidence first.
 
 use skia_safe::font_style::{Slant, Weight, Width};
 use skia_safe::FontStyle;
@@ -151,7 +151,7 @@ impl IntrinsicStyle {
 
 /// How the engine came to know a face by a given name.
 ///
-/// This is the field the eight-step resolution chain keys on. Steps 4 and 5 may
+/// This is the field the nine-step resolution chain keys on. Steps 4 and 5 may
 /// only match names the *font* asserts ([`Table`](Self::Table)); step 6 may
 /// match names the engine composed. Collapsing the two into a flat alias list —
 /// which is what the previous `FaceAliasIndex` did — is precisely what let a

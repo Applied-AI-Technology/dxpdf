@@ -236,6 +236,7 @@ mod tests {
             typeface: tf,
             origin: TypefaceOrigin::System { typeface_id: id },
             synthesis: Synthesis::default(),
+            vertical: None,
         }
     }
 

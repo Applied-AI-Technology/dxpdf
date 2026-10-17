@@ -66,6 +66,9 @@ struct LastCall {
 #[derive(Default)]
 pub struct FontCache {
     fonts: Vec<Font>,
+    /// Per slot, the metrics a look-alike measures with instead of its own
+    /// (`TypefaceEntry::vertical`), already scaled to the slot's size.
+    lines: Vec<Option<LineMetrics>>,
     index: HashMap<FontKey, usize>,
     last: Option<LastCall>,
 }
@@ -148,6 +151,14 @@ impl FontCache {
                 }
                 let i = self.fonts.len();
                 self.fonts.push(font);
+                self.lines.push(entry.vertical.map(|v| {
+                    let size = f32::from(font_size);
+                    LineMetrics {
+                        ascent: Pt::new(v.ascent * size),
+                        descent: Pt::new(v.descent * size),
+                        leading: Pt::new(v.line_gap * size),
+                    }
+                }));
                 self.index.insert(key, i);
                 i
             }
@@ -161,6 +172,35 @@ impl FontCache {
         });
         (idx, &self.fonts[idx])
     }
+
+    /// The `Font` in slot `idx`, as [`get_indexed`](Self::get_indexed) returned it.
+    pub fn font(&self, idx: usize) -> &Font {
+        &self.fonts[idx]
+    }
+
+    /// The line metrics to lay slot `idx` out with: the face's own, unless it
+    /// stands in for a face whose line it must keep (`TypefaceEntry::vertical`).
+    /// Every distance is positive — the ascent above the baseline, the descent
+    /// below it, the line gap.
+    pub fn line_metrics(&self, idx: usize) -> LineMetrics {
+        if let Some(lines) = self.lines[idx] {
+            return lines;
+        }
+        let (_, m) = self.fonts[idx].metrics();
+        LineMetrics {
+            ascent: Pt::new(-m.ascent),
+            descent: Pt::new(m.descent),
+            leading: Pt::new(m.leading.max(0.0)),
+        }
+    }
+}
+
+/// A font's vertical extent at its size, as [`FontCache::line_metrics`] reports it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LineMetrics {
+    pub ascent: Pt,
+    pub descent: Pt,
+    pub leading: Pt,
 }
 
 #[cfg(test)]

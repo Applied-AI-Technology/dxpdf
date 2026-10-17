@@ -569,6 +569,101 @@ fn an_unknown_name_falls_back_with_a_reason() {
     }
 }
 
+/// A catalogue holding one fixture face under each of `families`, as a host
+/// that installs those families would offer it.
+fn catalog_named(families: &[&str]) -> FaceCatalog {
+    let font_mgr = FontMgr::new();
+    let (_, typeface) = load(&font_mgr, "DxSans-Regular.ttf").remove(0);
+    let faces: Vec<_> = families
+        .iter()
+        .map(|family| ((*family).to_owned(), typeface.clone()))
+        .collect();
+    FaceCatalog::from_faces(font_mgr, &faces)
+}
+
+#[track_caller]
+fn step_for(catalog: &FaceCatalog, name: &str) -> (String, ResolutionStep) {
+    match resolve(&FaceRequest::plain(name), catalog) {
+        FaceResolution::Selected(selection) => (
+            selection.record.canonical_family.clone(),
+            selection.step.clone(),
+        ),
+        FaceResolution::Default { reason } => panic!("'{name}' did not resolve: {reason:?}"),
+    }
+}
+
+/// An Office script face with no metric-compatible clone takes its free
+/// look-alike when the host has one, rather than the host default — so the
+/// signature line Edwardian Script sets still reads as a script.
+#[test]
+fn a_script_face_takes_its_look_alike() {
+    let catalog = catalog_named(&["Imperial Script", "Indie Flower"]);
+    assert_eq!(
+        step_for(&catalog, "Edwardian Script ITC"),
+        (
+            "Imperial Script".to_owned(),
+            ResolutionStep::Lookalike {
+                via: "Edwardian Script ITC",
+                substitute: "Imperial Script"
+            }
+        )
+    );
+    assert_eq!(
+        step_for(&catalog, "Bradley Hand ITC").1,
+        ResolutionStep::Lookalike {
+            via: "Bradley Hand ITC",
+            substitute: "Indie Flower"
+        }
+    );
+}
+
+/// The look-alike is a last resort: a host that has the face itself uses it.
+#[test]
+fn the_face_itself_outranks_its_look_alike() {
+    let catalog = catalog_named(&["Edwardian Script ITC", "Imperial Script"]);
+    assert_eq!(
+        step_for(&catalog, "Edwardian Script ITC"),
+        (
+            "Edwardian Script ITC".to_owned(),
+            ResolutionStep::SystemFamily
+        )
+    );
+}
+
+/// A look-alike keeps the original's line: a line set in Bradley Hand ITC
+/// stands as tall as Bradley Hand makes it (`hhea` 1739/815/0 of 2048) whatever
+/// face draws it, so nothing below it moves for the stand-in. Asked of a host
+/// whose only font is `DxLineGap.ttf` (0.9em up, 0.2em down, 0.1em gap)
+/// installed as "Indie Flower", which keeps its own line when named directly.
+#[test]
+fn a_look_alike_keeps_the_original_s_line() {
+    use dxpdf::render::dimension::Pt;
+    use dxpdf::render::fonts::FontRegistry;
+    use dxpdf::render::layout::measurer::TextMeasurer;
+    use skia_safe::textlayout::TypefaceFontProvider;
+
+    let bytes = std::fs::read(fixture_dir().join("DxLineGap.ttf")).expect("fixture");
+    let typeface = FontMgr::new()
+        .new_from_data(&bytes, None)
+        .expect("fixture opens");
+    let mut host = TypefaceFontProvider::new();
+    host.register_typeface(typeface, Some("Indie Flower"));
+    let registry = FontRegistry::new(host.into());
+    let measurer = TextMeasurer::new(&registry);
+
+    let size = 20.0;
+    let bradley = measurer.default_line_height("Bradley Hand ITC", Pt::new(size));
+    let own = measurer.default_line_height("Indie Flower", Pt::new(size));
+    assert!(
+        (f32::from(bradley) - (1739.0 + 815.0) / 2048.0 * size).abs() < 0.01,
+        "Bradley Hand's line, got {bradley:?}"
+    );
+    assert!(
+        (f32::from(own) - (0.9 + 0.2 + 0.1) * size).abs() < 0.01,
+        "Indie Flower's own line, got {own:?}"
+    );
+}
+
 /// A face whose `name` table cannot be read at all must still be selectable by
 /// whatever the platform reports, rather than disappearing.
 #[test]

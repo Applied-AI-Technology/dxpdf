@@ -18,6 +18,14 @@
 //! *host-dependent* step: the same DOCX can paginate differently on macOS and
 //! Linux depending on what is installed. When cross-platform output differs,
 //! check this table first.
+//!
+//! [`LOOKALIKE_SUBSTITUTIONS`] is the weaker second tier: free faces in the
+//! same *style* as a proprietary one that has no metric-compatible clone —
+//! the script and handwriting faces Office ships. They do not share advance
+//! widths, so a run set in one wraps differently; they exist so a word set in
+//! Edwardian Script still reads as a script rather than as the host's default
+//! sans. Kept apart from the metric table so that table's promise holds for
+//! every entry in it.
 
 /// Open-source metric-compatible substitutes for proprietary fonts. Tried
 /// in order when `match_family_style` for the requested family fails.
@@ -83,15 +91,93 @@ pub(crate) fn strip_weight_suffix(name: &str) -> Option<&str> {
     best
 }
 
-/// Metric-compatible substitutes for `family`, falling back to its base family
-/// when the name is face-qualified. Returns the matched key alongside the list
-/// so the caller can log which one fired.
-pub(crate) fn substitutes_for(family: &str) -> Option<(&'static str, &'static [&'static str])> {
+/// Open-source faces that look like a proprietary face with no
+/// metric-compatible clone. Tried only after [`FONT_SUBSTITUTIONS`] has no
+/// answer. Each was chosen by comparing glyph shapes and widths against the
+/// original on the text the documents set in it:
+///
+/// - Edwardian Script ITC → Imperial Script: the same copperplate hand and
+///   stroke weight, glyphs on average 12% off in width.
+/// - Bradley Hand ITC → Indie Flower: no free face shares its widths (the
+///   nearest are 12% off per glyph); Indie Flower is the closest in feel, a
+///   thin, open, informal hand.
+///
+/// Both are SIL Open Font License faces from Google Fonts. Widths cannot be
+/// borrowed, but the line a face sets can: each entry carries the original's
+/// `hhea` metrics, and a look-alike is measured with those
+/// ([`TypefaceEntry::vertical`](super::TypefaceEntry::vertical)), so a line
+/// holding one stands as tall as Word makes it and nothing below it moves.
+/// Imperial Script's own line is 3% taller than Edwardian's and Indie
+/// Flower's 17% taller than Bradley Hand's.
+pub(crate) const LOOKALIKE_SUBSTITUTIONS: &[Lookalike] = &[
+    Lookalike {
+        family: "Edwardian Script ITC",
+        substitutes: &["Imperial Script"],
+        // hhea 1742/672/0 of 2048 units, Word for Mac 16's bundled copy.
+        vertical: VerticalMetrics {
+            ascent: 1742.0 / 2048.0,
+            descent: 672.0 / 2048.0,
+            line_gap: 0.0,
+        },
+    },
+    Lookalike {
+        family: "Bradley Hand ITC",
+        substitutes: &["Indie Flower"],
+        // hhea 1739/815/0 of 2048 units, as Word for Mac 16 embeds the face.
+        vertical: VerticalMetrics {
+            ascent: 1739.0 / 2048.0,
+            descent: 815.0 / 2048.0,
+            line_gap: 0.0,
+        },
+    },
+];
+
+/// A face with no metric-compatible clone, the free faces that look like it,
+/// and the vertical metrics they stand in with.
+#[derive(Debug)]
+pub(crate) struct Lookalike {
+    pub family: &'static str,
+    pub substitutes: &'static [&'static str],
+    pub vertical: VerticalMetrics,
+}
+
+/// A face's line metrics as fractions of its em, all positive: the `hhea`
+/// ascender, descender and line gap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VerticalMetrics {
+    pub ascent: f32,
+    pub descent: f32,
+    pub line_gap: f32,
+}
+
+/// The entry for `family` in `table`, falling back to its base family when
+/// the name is face-qualified. Returns the matched key alongside the list so
+/// the caller can log which one fired.
+fn lookup_in(
+    table: &'static [(&'static str, &'static [&'static str])],
+    family: &str,
+) -> Option<(&'static str, &'static [&'static str])> {
     let lookup = |name: &str| {
-        FONT_SUBSTITUTIONS
+        table
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(key, subs)| (*key, *subs))
+    };
+    lookup(family).or_else(|| lookup(strip_weight_suffix(family)?))
+}
+
+/// Metric-compatible substitutes for `family` ([`FONT_SUBSTITUTIONS`]).
+pub(crate) fn substitutes_for(family: &str) -> Option<(&'static str, &'static [&'static str])> {
+    lookup_in(FONT_SUBSTITUTIONS, family)
+}
+
+/// The [`LOOKALIKE_SUBSTITUTIONS`] entry for `family`, falling back to its
+/// base family when the name is face-qualified.
+pub(crate) fn lookalikes_for(family: &str) -> Option<&'static Lookalike> {
+    let lookup = |name: &str| {
+        LOOKALIKE_SUBSTITUTIONS
+            .iter()
+            .find(|entry| entry.family.eq_ignore_ascii_case(name))
     };
     lookup(family).or_else(|| lookup(strip_weight_suffix(family)?))
 }
@@ -172,5 +258,34 @@ mod tests {
         // A family that is not in the table stays absent, stripped or not.
         assert!(substitutes_for("Wingdings").is_none());
         assert!(substitutes_for("Wingdings Light").is_none());
+    }
+
+    /// A face is either metric-compatible or only a look-alike, never both:
+    /// the resolver tries the metric table first, so a family in both would
+    /// never reach its look-alikes, and a look-alike in the metric table would
+    /// break that table's promise of matching widths.
+    #[test]
+    fn the_two_tables_share_no_family() {
+        for entry in LOOKALIKE_SUBSTITUTIONS {
+            assert!(
+                substitutes_for(entry.family).is_none(),
+                "'{}' is in both tables",
+                entry.family
+            );
+        }
+    }
+
+    #[test]
+    fn office_script_faces_have_look_alikes() {
+        assert_eq!(
+            lookalikes_for("Edwardian Script ITC").map(|e| e.substitutes),
+            Some(&["Imperial Script"][..])
+        );
+        assert_eq!(
+            lookalikes_for("bradley hand itc").map(|e| e.family),
+            Some("Bradley Hand ITC"),
+            "matched without regard to case"
+        );
+        assert!(lookalikes_for("Calibri").is_none());
     }
 }

@@ -1,4 +1,4 @@
-//! The eight-step face-resolution chain.
+//! The nine-step face-resolution chain.
 //!
 //! A **pure function** of a [`FaceRequest`] and a [`FaceCatalog`]. Purity is the
 //! design goal, not a side effect: it is what lets the whole chain be tested
@@ -16,7 +16,8 @@
 //! | 5 | any other name the font sanctions — typographic, WWS, localized, a `STAT` style, an `fvar` instance | the font's own tables |
 //! | 6 | a family plus a trailing weight word, parsed | a guess |
 //! | 7 | a metric-compatible substitute | a curated table |
-//! | 8 | the host default | nothing |
+//! | 8 | a look-alike substitute | a curated table |
+//! | 9 | the host default | nothing |
 //!
 //! Everything down to step 5 is something a font *asserts about itself*. Step 6
 //! is the first guess, and it is the step this whole issue demoted: it used to
@@ -47,7 +48,7 @@ use super::catalog::{FaceCatalog, FaceLookup, Scope};
 use super::face::{FaceRecord, IntrinsicStyle, NameKind};
 use super::opentype::NameId;
 use super::request::{EffectiveStyle, FaceRequest};
-use super::substitutes::{canonical_weight_names, substitutes_for};
+use super::substitutes::{canonical_weight_names, lookalikes_for, substitutes_for};
 use super::FaceRef;
 
 /// Which step of the chain produced a selection.
@@ -76,6 +77,13 @@ pub enum ResolutionStep {
         via: &'static str,
         substitute: &'static str,
     },
+    /// 8 — a face in the same style, without matching widths.
+    Lookalike {
+        /// The `LOOKALIKE_SUBSTITUTIONS` key that matched,
+        /// which may be the request's base family rather than the request.
+        via: &'static str,
+        substitute: &'static str,
+    },
 }
 
 impl ResolutionStep {
@@ -89,6 +97,7 @@ impl ResolutionStep {
             Self::SystemMetadataAlias => "metadata alias",
             Self::ParsedFaceName { .. } => "parsed name",
             Self::Substitution { .. } => "substitute",
+            Self::Lookalike { .. } => "look-alike",
         }
     }
 }
@@ -249,32 +258,54 @@ pub fn resolve(request: &FaceRequest<'_>, catalog: &FaceCatalog) -> FaceResoluti
         }
     }
 
-    // 7 — metric-compatible substitution. The parsed weight carries over, so
-    // `"Segoe UI Light"` asks its substitute for Light rather than Regular.
+    // 7 — metric-compatible substitution.
     if let Some((via, substitutes)) = substitutes_for(request.name) {
-        let base = IntrinsicStyle {
-            weight: parse_face_name(request.name).map_or(400, |(_, weight)| weight),
-            ..IntrinsicStyle::NEUTRAL
-        };
-        let style = EffectiveStyle::resolve(request, base);
-        for substitute in substitutes {
-            let Some(faces) = catalog.family_faces(substitute) else {
-                continue;
-            };
-            let step = ResolutionStep::Substitution { via, substitute };
-            if let Some(selection) = rank(&faces, &style, step) {
-                return selected(selection);
-            }
+        if let Some(selection) = substitute(request, catalog, substitutes, |substitute| {
+            ResolutionStep::Substitution { via, substitute }
+        }) {
+            return selected(selection);
         }
     }
 
-    // 8 — nothing answered.
+    // 8 — a look-alike, for a face with no metric-compatible clone. Same style,
+    // different widths: better than the host default for a script or
+    // handwriting face, which would otherwise come out in plain sans.
+    if let Some(lookalike) = lookalikes_for(request.name) {
+        let via = lookalike.family;
+        if let Some(selection) = substitute(request, catalog, lookalike.substitutes, |substitute| {
+            ResolutionStep::Lookalike { via, substitute }
+        }) {
+            return selected(selection);
+        }
+    }
+
+    // 9 — nothing answered.
     FaceResolution::Default {
         reason: match ambiguity {
             Some((step, candidates)) => FallbackReason::AmbiguousName { step, candidates },
             None => FallbackReason::NoCandidate,
         },
     }
+}
+
+/// Steps 7 and 8: the first of `substitutes` the host has, ranked against the
+/// request. The parsed weight carries over, so `"Segoe UI Light"` asks its
+/// substitute for Light rather than Regular.
+fn substitute(
+    request: &FaceRequest<'_>,
+    catalog: &FaceCatalog,
+    substitutes: &'static [&'static str],
+    step: impl Fn(&'static str) -> ResolutionStep,
+) -> Option<Selection> {
+    let base = IntrinsicStyle {
+        weight: parse_face_name(request.name).map_or(400, |(_, weight)| weight),
+        ..IntrinsicStyle::NEUTRAL
+    };
+    let style = EffectiveStyle::resolve(request, base);
+    substitutes.iter().find_map(|substitute| {
+        let faces = catalog.family_faces(substitute)?;
+        rank(&faces, &style, step(substitute))
+    })
 }
 
 fn selected(selection: Selection) -> FaceResolution {
