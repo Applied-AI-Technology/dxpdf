@@ -222,8 +222,7 @@ fn build_non_story_content(
 
     let available_width = state.page_config.content_width();
 
-    let block_count = blocks.len();
-    for (block_i, block) in blocks.iter().enumerate() {
+    for block in blocks {
         match block {
             Block::Paragraph(p) => {
                 let (mut frags, props) = build_fragments(p, ctx, state, None, None);
@@ -300,8 +299,14 @@ fn build_non_story_content(
                 );
                 all_page_anchored_shapes.extend(page_anchored_shapes);
 
-                // §17.10.1: empty non-last paragraphs in headers/footers still
-                // occupy a line height (from the paragraph mark's font size).
+                // §17.10.1: an empty paragraph in a header or footer still
+                // occupies a line, as tall as its paragraph mark's font makes
+                // it — the last one too. Word stacks holdenma's
+                // ClerkDailyInPersonReport footer, "Page | N" over an empty
+                // 8pt-mark paragraph, 31.97pt above its footer margin: the
+                // mark's 8pt line and its 8pt after. Without a line of its own
+                // the last paragraph took the document default's 11pt one and
+                // set the page number 4pt high.
                 //
                 // Exception: paragraphs whose only content is floating shape
                 // or image anchors are treated as zero-height anchors —
@@ -309,7 +314,7 @@ fn build_non_story_content(
                 // which must coincide with the preceding paragraph's bottom
                 // (otherwise the shape displaces text it should flank).
                 let has_floating_anchor = has_float_images || !paragraph_shapes.is_empty();
-                if frags.is_empty() && block_i + 1 < block_count && !has_floating_anchor {
+                if frags.is_empty() && !has_floating_anchor {
                     let (family, mut size, ..) =
                         resolve_paragraph_defaults(p, ctx.resolved, false, None, None);
                     if let Some(ref mrp) = p.mark_run_properties {
@@ -369,7 +374,7 @@ pub fn default_line_height(ctx: &BuildContext) -> Pt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::dimension::Dimension;
+    use crate::model::dimension::{Dimension, HalfPoints};
     use crate::render::fonts::FontRegistry;
     use crate::render::layout::measurer::TextMeasurer;
 
@@ -418,10 +423,12 @@ mod tests {
             .collect()
     }
 
-    /// §17.10.1: an empty paragraph in a header/footer holds a line of height —
-    /// *except* the last one, which would otherwise push the whole stack.
+    /// §17.10.1: every empty paragraph in a header/footer holds a line — the
+    /// last one too, or a lone one. Word stacks a footer ending in an empty
+    /// paragraph with that paragraph's line under it (holdenma's
+    /// ClerkDailyInPersonReport).
     #[test]
-    fn empty_header_paragraphs_hold_a_line_except_the_last() {
+    fn empty_header_paragraphs_each_hold_a_line() {
         let resolved = empty_resolved();
         let registry = FontRegistry::new(skia_safe::FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
@@ -433,18 +440,17 @@ mod tests {
 
         let blocks = vec![empty_para(), empty_para(), empty_para()];
         let hf = build_header_footer_content(&blocks, &ctx, &mut state);
+        assert_eq!(line_break_counts(&hf.blocks), vec![1, 1, 1]);
 
-        assert_eq!(hf.blocks.len(), 3);
-        assert_eq!(
-            line_break_counts(&hf.blocks),
-            vec![1, 1, 0],
-            "the trailing empty paragraph contributes no line"
-        );
+        let hf = build_header_footer_content(&[empty_para()], &ctx, &mut state);
+        assert_eq!(line_break_counts(&hf.blocks), vec![1]);
     }
 
-    /// A single empty paragraph is also the last one, so it contributes nothing.
+    /// The last paragraph's line is its mark's: an 8pt mark makes a shorter
+    /// line than a 20pt one, where taking the document default would make the
+    /// two alike.
     #[test]
-    fn a_lone_empty_header_paragraph_holds_no_line() {
+    fn the_last_empty_paragraphs_line_is_its_marks() {
         let resolved = empty_resolved();
         let registry = FontRegistry::new(skia_safe::FontMgr::new());
         let measurer = TextMeasurer::new(&registry);
@@ -453,9 +459,24 @@ mod tests {
             resolved: &resolved,
         };
         let mut state = BuildState::default();
-
-        let hf = build_header_footer_content(&[empty_para()], &ctx, &mut state);
-        assert_eq!(line_break_counts(&hf.blocks), vec![0]);
+        let mut line_of = |half_points: i64| {
+            let Block::Paragraph(mut p) = empty_para() else {
+                unreachable!()
+            };
+            p.mark_run_properties = Some(model::RunProperties {
+                font_size: model::Dup::from(Some(Dimension::<HalfPoints>::new(half_points))),
+                ..Default::default()
+            });
+            let hf = build_header_footer_content(&[Block::Paragraph(p)], &ctx, &mut state);
+            match &hf.blocks[..] {
+                [LayoutBlock::Paragraph { fragments, .. }] => match fragments[..] {
+                    [Fragment::LineBreak { line_height, .. }] => line_height,
+                    _ => panic!("one mark line: {fragments:?}"),
+                },
+                _ => panic!("one paragraph"),
+            }
+        };
+        assert!(line_of(16) < line_of(40));
     }
 
     // ── §17.6.22 speculative build (plan §1) ────────────────────────────────
