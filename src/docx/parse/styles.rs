@@ -207,8 +207,10 @@ const _: Option<SectPrXml> = None;
 
 impl From<StylesXml> for StyleSheet {
     fn from(x: StylesXml) -> Self {
-        let mut sheet = StyleSheet::default();
-        sheet.doc_defaults_paragraph = absent_paragraph_defaults();
+        let mut sheet = StyleSheet {
+            doc_defaults_paragraph: absent_paragraph_defaults(),
+            ..StyleSheet::default()
+        };
 
         if let Some(dd) = Dup::from(x.doc_defaults).into_value() {
             if let Some(r) = Dup::from(dd.r_pr_default)
@@ -238,11 +240,13 @@ impl From<StylesXml> for StyleSheet {
 }
 
 /// The paragraph defaults Word supplies when a styles part has no
-/// `w:pPrDefault`: 8pt after and 1.15 lines (§17.7.2 leaves them to the
-/// application; §17.3.1.33's zero-and-single are what an *empty* `pPrDefault`
-/// gives). Word draws `test-files/paragraph-defaults-none.docx` with them —
+/// `w:pPrDefault`: 8pt after and 1.15 lines, §17.7.2 leaving them to the
+/// application. Word draws `test-files/paragraph-defaults-none.docx` with them —
 /// with or without a `settings.xml` naming a compatibility mode — and a
 /// paragraph's own `w:spacing` replaces them attribute by attribute.
+///
+/// A `pPrDefault` with no `w:pPr` is read as stating nothing, so §17.3.1.33's
+/// no space and single spacing; no Word render has asked what Word does there.
 fn absent_paragraph_defaults() -> ParagraphProperties {
     ParagraphProperties {
         spacing: Dup::from(Some(ParagraphSpacing {
