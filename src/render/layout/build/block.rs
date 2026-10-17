@@ -271,6 +271,7 @@ pub(super) fn build_paragraph_block(
     let mut style = paragraph_style_from_props(
         &merged_props,
         Pt::from(ctx.resolved.default_tab_stop),
+        ctx.resolved.compat,
         state.shape_auto_fit,
         super::convert::paragraph_locale(p, ctx.resolved),
         outline,
@@ -435,6 +436,7 @@ fn build_note_blocks(
             let style = paragraph_style_from_props(
                 &merged_props,
                 Pt::from(ctx.resolved.default_tab_stop),
+                ctx.resolved.compat,
                 state.shape_auto_fit,
                 super::convert::paragraph_locale(p, ctx.resolved),
                 // §17.3.1.19: always `None` — the collector is suspended for

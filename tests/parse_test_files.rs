@@ -457,6 +457,10 @@ const ALL_FILES: &[&str] = &[
     "paragraph-defaults-none.docx",
     "paragraph-defaults-15.docx",
     "paragraph-defaults-explicit.docx",
+    "hanging-tab-15.docx",
+    "hanging-tab-compat.docx",
+    "hanging-tab-legacy.docx",
+    "hanging-tab-legacy-15.docx",
     "autofit-columns.docx",
 ];
 

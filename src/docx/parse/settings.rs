@@ -28,12 +28,15 @@ struct SettingsXml {
     compat: Vec<CompatXml>,
 }
 
-/// §17.15.1.21 `w:compat`. Only its [MS-DOCX] §2.6.1 `w:compatSetting`
-/// children are read; the legacy boolean flags beside them are not modelled.
+/// §17.15.1.21 `w:compat`. Its [MS-DOCX] §2.6.1 `w:compatSetting` children
+/// are read, and of the legacy boolean flags beside them only those layout
+/// reads.
 #[derive(Deserialize, Default)]
 struct CompatXml {
     #[serde(rename = "compatSetting", default)]
     settings: Vec<CompatSettingXml>,
+    #[serde(rename = "noTabHangInd", default)]
+    no_tab_hang_ind: Vec<OnOff>,
 }
 
 #[derive(Deserialize)]
@@ -54,10 +57,19 @@ const WORD_COMPAT_URI: &str = "http://schemas.microsoft.com/office/word";
 impl From<Vec<CompatXml>> for Compatibility {
     fn from(compat: Vec<CompatXml>) -> Self {
         let mut c = Compatibility::default();
-        // Later entries win, as for every other repeated element here.
-        for setting in compat
+        let (settings, no_tab_hang_ind): (Vec<_>, Vec<_>) = compat
             .into_iter()
-            .flat_map(|x| x.settings)
+            .map(|x| (x.settings, x.no_tab_hang_ind))
+            .unzip();
+        if let Some(OnOff(on)) =
+            Dup::from(no_tab_hang_ind.into_iter().flatten().collect::<Vec<_>>()).into_value()
+        {
+            c.no_tab_hang_ind = on;
+        }
+        // Later entries win, as for every other repeated element here.
+        for setting in settings
+            .into_iter()
+            .flatten()
             .filter(|s| s.uri == WORD_COMPAT_URI)
         {
             match setting.name.as_str() {
@@ -159,6 +171,17 @@ mod tests {
             r#"<w:compatSetting w:name="compatibilityMode" w:uri="urn:example" w:val="15"/>"#,
         );
         assert_eq!(s.compat.mode, None);
+    }
+
+    #[test]
+    fn reads_the_no_tab_hang_ind_flag() {
+        assert!(settings("<w:noTabHangInd/>").compat.no_tab_hang_ind);
+        assert!(
+            !settings(r#"<w:noTabHangInd w:val="0"/>"#)
+                .compat
+                .no_tab_hang_ind
+        );
+        assert!(!settings("").compat.no_tab_hang_ind);
     }
 
     #[test]

@@ -331,6 +331,7 @@ pub(super) fn base_direction(props: &model::ParagraphProperties) -> BaseDirectio
 pub(super) fn paragraph_style_from_props(
     props: &model::ParagraphProperties,
     default_tab_stop: Pt,
+    compat: model::Compatibility,
     auto_fit: crate::render::layout::ShapeAutoFit,
     (locale, decimal_separator): (crate::render::resolve::locale::Locale, char),
     outline: Option<crate::render::layout::draw_command::OutlineHeading>,
@@ -394,7 +395,7 @@ pub(super) fn paragraph_style_from_props(
 
     // §17.3.1.38: convert tab stops to layout format.
     // Clear entries are directives consumed during style merging, not layout stops.
-    let tabs: Vec<TabStopDef> = props
+    let mut tabs: Vec<TabStopDef> = props
         .tabs
         .iter()
         .filter(|t| t.alignment != model::TabAlignment::Clear)
@@ -404,6 +405,25 @@ pub(super) fn paragraph_style_from_props(
             leader: t.leader,
         })
         .collect();
+    // A hanging indent is a tab stop: a tab on the first line stops at the
+    // left indent, where the lines below start, unless a stop of the
+    // paragraph's own comes first. Word stops holdenma's notices'
+    // `ind left="333" hanging="180"` first-line tab at 16.65pt rather than at
+    // the 36pt default; a numbering label's suffix tab is the common case.
+    if indent_first_line < Pt::ZERO
+        && compat.hanging_indent_tab_stop()
+        && !tabs.iter().any(|t| t.position == indent_left)
+    {
+        let at = tabs.partition_point(|t| t.position < indent_left);
+        tabs.insert(
+            at,
+            TabStopDef {
+                position: indent_left,
+                alignment: model::TabAlignment::Left,
+                leader: model::TabLeader::None,
+            },
+        );
+    }
 
     ParagraphStyle {
         auto_fit,

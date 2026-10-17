@@ -181,10 +181,6 @@ pub(super) fn inject_list_label(
             }
         }
         fragments.insert(0, label_frag);
-
-        if !drop_separator {
-            insert_implicit_tab_stop(merged_props, layout_ind);
-        }
     } else {
         inject_text_label(
             para,
@@ -301,25 +297,6 @@ fn spacer_fragment(
         baseline_offset: Pt::ZERO,
         text_offset: Pt::ZERO,
         is_footnote_ref: false,
-    }
-}
-
-/// Add the implicit tab stop at the effective text-indent position so the
-/// label's suffix tab lands where the body text wraps (Word puts an implicit
-/// stop at the paragraph's left indent for numbered paragraphs).
-fn insert_implicit_tab_stop(
-    merged_props: &mut ParagraphProperties,
-    layout_ind: Option<model::Indentation>,
-) {
-    if let Some(left) = layout_ind.and_then(|ind| ind.start) {
-        merged_props.tabs.insert(
-            0,
-            crate::model::TabStop {
-                position: left,
-                alignment: crate::model::TabAlignment::Left,
-                leader: crate::model::TabLeader::None,
-            },
-        );
     }
 }
 
@@ -470,11 +447,9 @@ fn inject_text_label(
                     },
                 );
             }
+            // The tab lands at the body-text indent by the stop a hanging
+            // indent makes (`convert::paragraph_style_from_props`).
             fragments.insert(0, label_frag);
-            // Implicit tab stop at the body-text indent. Also installed on the
-            // spacer path: the line has no tab there, so the stop is inert
-            // unless the run content itself contains one.
-            insert_implicit_tab_stop(merged_props, layout_ind);
         }
         LevelSuffix::Space => {
             let (sw, sm) = ctx.measurer.measure(" ", &label_font);
@@ -808,6 +783,23 @@ mod tests {
         (fragments, props)
     }
 
+    /// The paragraph's first tab stop, in twips, as its properties lay it
+    /// out — where the label's suffix tab stops.
+    fn first_stop(props: &ParagraphProperties) -> Option<i64> {
+        let style = super::super::convert::paragraph_style_from_props(
+            props,
+            Pt::new(36.0),
+            crate::model::Compatibility::default(),
+            crate::render::layout::ShapeAutoFit::NONE,
+            (Default::default(), '.'),
+            None,
+        );
+        style
+            .tabs
+            .first()
+            .map(|t| (t.position.raw() * 20.0).round() as i64)
+    }
+
     fn ind(left: i64, hanging: i64) -> Indentation {
         Indentation {
             start: Some(Dimension::<Twips>::new(left)),
@@ -840,7 +832,7 @@ mod tests {
         );
 
         assert_eq!(
-            props.tabs.first().map(|t| t.position.raw()),
+            first_stop(&props),
             Some(567),
             "implicit tab stop must sit at the cascade indent, not the level's"
         );
@@ -964,9 +956,10 @@ mod tests {
                 }
                 other => panic!("{alignment:?}: expected spacer text fragment, got {other:?}"),
             }
-            // The implicit stop is installed but inert — the line has no tab.
+            // The hanging indent's stop is there but inert — the line has no
+            // tab.
             assert_eq!(
-                props.tabs.first().map(|t| t.position.raw()),
+                first_stop(&props),
                 Some(360),
                 "{alignment:?}: implicit stop still installed"
             );
@@ -1098,7 +1091,7 @@ mod tests {
         );
 
         assert_eq!(
-            props.tabs.first().map(|t| t.position.raw()),
+            first_stop(&props),
             Some(720),
             "implicit stop must land at the cascade start"
         );
@@ -1225,29 +1218,30 @@ mod tests {
         }
     }
 
-    /// §17.9.29: only the `Tab` suffix installs the implicit tab stop at the
-    /// level's `start` indent — a `Space`/`Nothing` label has no tab to land.
+    /// The stop the suffix tab lands on is the level's hanging indent's, not
+    /// the label's: whatever the §17.9.29 suffix, a hanging level leaves one
+    /// at its `start` indent and a level without a hanging indent none.
     #[test]
-    fn only_a_tab_suffix_installs_the_implicit_tab_stop() {
-        for (suffix, expect_stop) in [
-            (LevelSuffix::Tab, true),
-            (LevelSuffix::Space, false),
-            (LevelSuffix::Nothing, false),
-        ] {
-            let resolved = resolved_with(vec![ResolvedNumberingLevel {
-                suffix,
-                indentation: Some(Indentation {
-                    start: Some(Dimension::new(720)),
-                    ..Default::default()
-                }),
-                ..decimal_level()
-            }]);
-            let (_, props) = inject(&resolved, &mut BuildState::default(), 0);
-            assert_eq!(
-                props.tabs.iter().any(|t| t.position == Dimension::new(720)),
-                expect_stop,
-                "{suffix:?}"
-            );
+    fn the_implicit_tab_stop_is_the_hanging_indents() {
+        for suffix in [LevelSuffix::Tab, LevelSuffix::Space, LevelSuffix::Nothing] {
+            for (indentation, expected) in [
+                (ind(720, 360), Some(720)),
+                (
+                    Indentation {
+                        start: Some(Dimension::new(720)),
+                        ..Default::default()
+                    },
+                    None,
+                ),
+            ] {
+                let resolved = resolved_with(vec![ResolvedNumberingLevel {
+                    suffix,
+                    indentation: Some(indentation),
+                    ..decimal_level()
+                }]);
+                let (_, props) = inject(&resolved, &mut BuildState::default(), 0);
+                assert_eq!(first_stop(&props), expected, "{suffix:?} {indentation:?}");
+            }
         }
     }
 

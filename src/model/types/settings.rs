@@ -21,11 +21,12 @@ pub struct DocumentSettings {
 
 /// The part of §17.15.1.21 `w:compat` that changes what a page looks like:
 /// the `w:compatSetting` entries Word writes under its own URI
-/// (`http://schemas.microsoft.com/office/word`), [MS-DOCX] §2.6.1.
+/// (`http://schemas.microsoft.com/office/word`), [MS-DOCX] §2.6.1, and the
+/// legacy flags read so far.
 ///
-/// Both are `Option` because absent is its own answer, not a default value:
-/// a document with no `compatibilityMode` is laid out like an old one, and one
-/// with no `enableOpenTypeFeatures` takes whatever its mode implies.
+/// The settings are `Option` because absent is its own answer, not a default
+/// value: a document with no `compatibilityMode` is laid out like an old one,
+/// and one with no `enableOpenTypeFeatures` takes whatever its mode implies.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Compatibility {
     /// `compatibilityMode`: the Word version whose layout the document asks
@@ -34,6 +35,10 @@ pub struct Compatibility {
     /// `enableOpenTypeFeatures`: OpenType ligatures in a document whose mode
     /// would not otherwise have them.
     pub enable_open_type_features: Option<bool>,
+    /// §17.15.3 `w:noTabHangInd`: no implicit tab stop at a hanging
+    /// paragraph's left indent, outside mode 15
+    /// ([`Compatibility::hanging_indent_tab_stop`]).
+    pub no_tab_hang_ind: bool,
 }
 
 impl Compatibility {
@@ -51,6 +56,14 @@ impl Compatibility {
     pub fn open_type_features(self) -> bool {
         self.enable_open_type_features
             .unwrap_or_else(|| self.is_word_2013())
+    }
+
+    /// Whether a paragraph with a hanging indent has a tab stop at its left
+    /// indent, ordered among its own stops. Measured
+    /// (`test-files/hanging-tab-*.docx`): Word makes one unless
+    /// `w:noTabHangInd` says not to, and ignores the flag in mode 15.
+    pub fn hanging_indent_tab_stop(self) -> bool {
+        !self.no_tab_hang_ind || self.is_word_2013()
     }
 }
 
@@ -96,6 +109,7 @@ mod tests {
         let mode = |m| Compatibility {
             mode: m,
             enable_open_type_features: None,
+            ..Compatibility::default()
         };
         assert!(!mode(None).is_word_2013(), "absent is compatibility mode");
         assert!(!mode(Some(14)).is_word_2013());
@@ -108,11 +122,25 @@ mod tests {
         let c = |m, otf| Compatibility {
             mode: m,
             enable_open_type_features: otf,
+            ..Compatibility::default()
         };
         assert!(c(Some(15), None).open_type_features());
         assert!(!c(Some(14), None).open_type_features());
         assert!(!c(None, None).open_type_features());
         assert!(c(Some(14), Some(true)).open_type_features());
         assert!(!c(Some(15), Some(false)).open_type_features());
+    }
+
+    #[test]
+    fn no_tab_hang_ind_holds_only_outside_mode_15() {
+        let c = |m, flag| Compatibility {
+            mode: m,
+            no_tab_hang_ind: flag,
+            ..Compatibility::default()
+        };
+        assert!(c(None, false).hanging_indent_tab_stop());
+        assert!(!c(None, true).hanging_indent_tab_stop());
+        assert!(!c(Some(14), true).hanging_indent_tab_stop());
+        assert!(c(Some(15), true).hanging_indent_tab_stop());
     }
 }
