@@ -124,9 +124,16 @@ pub fn break_offsets(text: &str) -> Vec<usize> {
 /// two are the opportunities measured; the rest UAX #14 grants between ASCII
 /// punctuation and letters (after `!` or `?` before a letter, say) are taken
 /// away on the same footing — Word's Latin text breaks at spaces and hyphens.
-/// A break next to a space, or touching any non-ASCII character, is left to
-/// UAX #14, and so is the break at the end of `text`, whose follower is not
-/// known here.
+/// A break touching any non-ASCII character is left to UAX #14, and so is the
+/// break at the end of `text`, whose follower is not known here.
+///
+/// The space is the other half: Word breaks after a run of spaces before an
+/// ASCII character whatever precedes the spaces, where UAX #14 keeps an
+/// opening bracket or quotation mark with what follows it however many spaces
+/// intervene (LB14 `OP SP* ×`, LB15). The tenant DogTransactionReports'
+/// `{#onlineTransactions}{ orderPaidDate}` wraps after its space in Word, and
+/// its 95.6pt column — which Word would have widened to the whole tag had it
+/// no break (`build::table`'s `autofit_widths`) — says the same.
 fn tailor_ascii_breaks(text: &str, offsets: &mut Vec<usize>) {
     let graphic = |c: Option<char>| c.is_some_and(|c| c.is_ascii_graphic());
     offsets.retain(|&o| {
@@ -134,6 +141,16 @@ fn tailor_ascii_breaks(text: &str, offsets: &mut Vec<usize>) {
         let after = text[o..].chars().next();
         !(graphic(before) && graphic(after)) || before == Some('-')
     });
+    let missing: Vec<usize> = text
+        .char_indices()
+        .filter(|&(i, c)| i > 0 && c.is_ascii_graphic() && text[..i].ends_with(' '))
+        .map(|(i, _)| i)
+        .filter(|o| offsets.binary_search(o).is_err())
+        .collect();
+    if !missing.is_empty() {
+        offsets.extend(missing);
+        offsets.sort_unstable();
+    }
 }
 
 /// UAX #14's untailored LB25 glues a hyphen to a following digit
@@ -209,6 +226,19 @@ mod tests {
         assert_eq!(pieces("abcd/efgh and/or"), ["abcd/efgh ", "and/or"]);
         assert_eq!(pieces("{#x}{/x}"), ["{#x}{/x}"]);
         assert_eq!(pieces("co-op TOKEN-123"), ["co-", "op ", "TOKEN-", "123"]);
+    }
+
+    /// Word breaks after a space whatever stands before it. UAX #14 does not
+    /// after an opening bracket or quotation mark (LB14, LB15) — the tenant
+    /// DogTransactionReports' `{#onlineTransactions}{ orderPaidDate}`, which
+    /// Word wraps after the space.
+    #[test]
+    fn ascii_text_breaks_after_every_space() {
+        assert_eq!(
+            pieces("{#onlineTransactions}{ orderPaidDate}"),
+            ["{#onlineTransactions}{ ", "orderPaidDate}"]
+        );
+        assert_eq!(pieces("( a \"  b"), ["( ", "a ", "\"  ", "b"]);
     }
 
     // ── The gap #130 exists to close ────────────────────────────────────────
