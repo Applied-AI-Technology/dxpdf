@@ -96,13 +96,22 @@ fn clip_oversized_images(fragments: &[Fragment], max_width: Pt) -> Option<Vec<Fr
             .map(|f| match f {
                 Fragment::Image {
                     size,
+                    effect_extent,
                     rel_id,
                     image_data,
                     src_rect,
                     opacity,
                 } if size.width > max_width => {
-                    // Fraction of the object's width that survives the clip.
-                    let visible = max_width.raw() / size.width.raw();
+                    // Fraction of the picture's width that survives the clip:
+                    // the box loses its overflow, and the picture, drawn
+                    // inside the box's effect extent, loses the same.
+                    let drawn = size.width - effect_extent.horizontal();
+                    let kept = (max_width - effect_extent.horizontal()).max(Pt::ZERO);
+                    let visible = if drawn > Pt::ZERO {
+                        kept.raw() / drawn.raw()
+                    } else {
+                        0.0
+                    };
                     // Start from the existing crop (fraction of the source), or
                     // the whole image, then keep its left `visible` sub-fraction
                     // — same origin, narrower width (crop the right overflow).
@@ -120,6 +129,7 @@ fn clip_oversized_images(fragments: &[Fragment], max_width: Pt) -> Option<Vec<Fr
                         // displayed width shrinks, showing the left, un-clipped
                         // part.
                         size: PtSize::new(max_width, size.height),
+                        effect_extent: *effect_extent,
                         rel_id: rel_id.clone(),
                         image_data: image_data.clone(),
                         src_rect: Some(cropped),
@@ -547,6 +557,7 @@ mod tests {
     use super::*;
     use crate::model::{Alignment, PTabAlignment, PTabRelativeTo};
     use crate::render::fonts::Toggle;
+    use crate::render::geometry::PtEdgeInsets;
     use crate::render::layout::fragment::{
         BreakAfter, FontProps, LinkTarget, MathRow, TextMetrics,
     };
@@ -660,6 +671,7 @@ mod tests {
     fn image_frag(w: f32, h: f32) -> Fragment {
         Fragment::Image {
             size: PtSize::new(Pt::new(w), Pt::new(h)),
+            effect_extent: PtEdgeInsets::ZERO,
             rel_id: "rId1".to_string(),
             image_data: None,
             src_rect: None,

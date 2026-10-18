@@ -5,7 +5,7 @@ use crate::model::{
 };
 use crate::render::dimension::Pt;
 use crate::render::emoji::cluster::EmojiCluster;
-use crate::render::geometry::PtSize;
+use crate::render::geometry::{PtEdgeInsets, PtSize};
 use crate::render::resolve::color::RgbColor;
 use crate::render::resolve::shading::{resolve_shading, ResolvedShading};
 
@@ -887,10 +887,19 @@ where
                         if let Some(rel_id) =
                             crate::render::resolve::images::extract_image_rel_id(img)
                         {
-                            let w = Pt::from(img.extent.width);
-                            let h = Pt::from(img.extent.height);
+                            let effect_extent = img.effect_extent.map_or(PtEdgeInsets::ZERO, |e| {
+                                PtEdgeInsets::new(
+                                    Pt::from(e.top),
+                                    Pt::from(e.right),
+                                    Pt::from(e.bottom),
+                                    Pt::from(e.left),
+                                )
+                            });
+                            let w = Pt::from(img.extent.width) + effect_extent.horizontal();
+                            let h = Pt::from(img.extent.height) + effect_extent.vertical();
                             fragments.push(Fragment::Image {
                                 size: PtSize::new(w, h),
+                                effect_extent,
                                 rel_id: rel_id.as_str().to_string(),
                                 image_data: None,
                                 src_rect: crate::render::resolve::images::extract_src_rect(img),

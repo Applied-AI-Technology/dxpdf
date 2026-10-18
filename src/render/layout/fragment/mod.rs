@@ -12,7 +12,7 @@ use crate::render::dimension::Pt;
 use crate::render::emoji::cluster::{EmojiPresentation, EmojiStructure};
 use crate::render::fonts::Toggle;
 use crate::render::fonts::TypefaceEntry;
-use crate::render::geometry::{PtRect, PtSize};
+use crate::render::geometry::{PtEdgeInsets, PtRect, PtSize};
 use crate::render::resolve::color::RgbColor;
 use crate::render::resolve::fonts::effective_font;
 use crate::render::resolve::images::MediaEntry;
@@ -470,7 +470,14 @@ pub enum Fragment {
         is_footnote_ref: bool,
     },
     Image {
+        /// The box the picture takes in its line: §20.4.2.7 `wp:extent`
+        /// grown on each side by §20.4.2.6 `wp:effectExtent`. Its bottom
+        /// stands on the baseline; Word moves the text after it by its width
+        /// and grows the line by its height (`test-files/inline-effect-extent.docx`).
         size: PtSize,
+        /// How far inside `size` the picture itself is drawn — the
+        /// `effectExtent` the box was grown by.
+        effect_extent: PtEdgeInsets,
         rel_id: String,
         image_data: Option<MediaEntry>,
         /// §20.1.10.48 `a:srcRect` — fractional source crop in `[0, 1]`.
@@ -887,6 +894,7 @@ mod mark_line_tests {
     fn drawn() -> Fragment {
         Fragment::Image {
             size: PtSize::new(Pt::new(10.0), Pt::new(10.0)),
+            effect_extent: PtEdgeInsets::ZERO,
             rel_id: "rId1".into(),
             image_data: None,
             src_rect: None,

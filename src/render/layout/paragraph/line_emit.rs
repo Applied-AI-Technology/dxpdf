@@ -1021,6 +1021,7 @@ pub(super) fn emit_line_commands(
                 }
                 Fragment::Image {
                     size,
+                    effect_extent,
                     image_data,
                     src_rect,
                     opacity,
@@ -1031,14 +1032,15 @@ pub(super) fn emit_line_commands(
                             * distribution_gap_count_after(fragments, &order, pos) as f32;
                     let x = pen.place(size.width, advance);
                     if let Some(data) = image_data {
-                        // An inline picture stands on the baseline — see
-                        // `LineMetrics`.
+                        // An inline picture's box stands on the baseline — see
+                        // `LineMetrics` — and the picture is drawn inside its
+                        // effect extent.
                         commands.push(DrawCommand::Image {
                             rect: crate::render::geometry::PtRect::from_xywh(
-                                x,
-                                *cursor_y + baseline - size.height,
-                                size.width,
-                                size.height,
+                                x + effect_extent.left,
+                                *cursor_y + baseline - size.height + effect_extent.top,
+                                size.width - effect_extent.horizontal(),
+                                size.height - effect_extent.vertical(),
                             ),
                             image_data: data.clone(),
                             src_rect: *src_rect,

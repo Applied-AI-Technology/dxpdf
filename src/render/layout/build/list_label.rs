@@ -34,6 +34,7 @@ use std::rc::Rc;
 use crate::i18n::bidi::BidiLevel;
 use crate::model::{self, ParagraphProperties};
 use crate::render::dimension::Pt;
+use crate::render::geometry::PtEdgeInsets;
 use crate::render::layout::fragment::Fragment;
 
 use super::convert::{
@@ -138,6 +139,7 @@ pub(super) fn inject_list_label(
             let size = pic_bullet_size(bullet);
             let label_frag = Fragment::Image {
                 size,
+                effect_extent: PtEdgeInsets::ZERO,
                 rel_id: rel_id.as_str().to_string(),
                 image_data: Some(image_bytes.clone()),
                 src_rect: None,
