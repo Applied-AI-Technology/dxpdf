@@ -390,9 +390,14 @@ fn render_page(
                 kerning,
                 outline,
             } => {
-                let (slot, base_font) =
+                let (slot, _) =
                     font_cache.get_indexed(registry, font_family, *font_size, *bold, *italic);
-                // §17.3.2.45: a non-1.0 scale is applied via Skia's scale_x —
+                // §17.3.2.45 `w:w`, times a look-alike's stretch to the widths
+                // of the face it stands in for — the scale layout measured
+                // the run at (`FontCache::width_scale`).
+                let scale_x = *text_scale * font_cache.width_scale(slot);
+                let base_font = font_cache.font(slot);
+                // A non-1.0 scale is applied via Skia's scale_x —
                 // that scales glyph advances and horizontal glyph extent
                 // without touching the cached, shared Font. Cloning and
                 // mutating a fresh Font keeps the cache invariant intact. A
@@ -400,9 +405,9 @@ fn render_page(
                 // bypasses the (slot-keyed) blob cache.
                 let scaled_font;
                 let (font, blob_slot): (&skia_safe::Font, Option<usize>) =
-                    if (*text_scale - 1.0).abs() > f32::EPSILON {
+                    if (scale_x - 1.0).abs() > f32::EPSILON {
                         let mut f = base_font.clone();
-                        f.set_scale_x(*text_scale);
+                        f.set_scale_x(scale_x);
                         scaled_font = f;
                         (&scaled_font, None)
                     } else {
@@ -415,7 +420,7 @@ fn render_page(
                     font_size.raw(),
                     bold,
                     italic,
-                    text_scale,
+                    scale_x,
                 );
                 text_paint.set_color4f(to_color4f(*color), None);
                 // §17.3.2.23 `w:outline` (issue #148): stroke the contours

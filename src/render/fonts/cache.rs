@@ -69,6 +69,8 @@ pub struct FontCache {
     /// Per slot, the metrics a look-alike measures with instead of its own
     /// (`TypefaceEntry::vertical`), already scaled to the slot's size.
     lines: Vec<Option<LineMetrics>>,
+    /// Per slot, the look-alike's stretch (`TypefaceEntry::width_scale`).
+    width_scales: Vec<f32>,
     index: HashMap<FontKey, usize>,
     last: Option<LastCall>,
 }
@@ -151,6 +153,7 @@ impl FontCache {
                 }
                 let i = self.fonts.len();
                 self.fonts.push(font);
+                self.width_scales.push(entry.width_scale);
                 self.lines.push(entry.vertical.map(|v| {
                     let size = f32::from(font_size);
                     LineMetrics {
@@ -176,6 +179,14 @@ impl FontCache {
     /// The `Font` in slot `idx`, as [`get_indexed`](Self::get_indexed) returned it.
     pub fn font(&self, idx: usize) -> &Font {
         &self.fonts[idx]
+    }
+
+    /// How far slot `idx`'s advances and glyphs are stretched: 1.0 unless its
+    /// face is a look-alike set to the widths of the face it stands in for
+    /// (`TypefaceEntry::width_scale`). Every place that applies §17.3.2.45
+    /// `w:w` multiplies this in with it, so measuring and painting agree.
+    pub fn width_scale(&self, idx: usize) -> f32 {
+        self.width_scales[idx]
     }
 
     /// The line metrics to lay slot `idx` out with: the face's own, unless it

@@ -139,6 +139,11 @@ pub struct TypefaceEntry {
     /// original makes it. Per request, like `synthesis`, and for the same
     /// reason: the face opened is shared, the stand-in role is not.
     pub vertical: Option<VerticalMetrics>,
+    /// How far to stretch the face's advances, and its glyphs with them —
+    /// set, like `vertical`, when the face is a look-alike narrower or wider
+    /// than the one it stands in for (`LOOKALIKE_SUBSTITUTIONS`). 1.0 for every
+    /// other face. Applied with §17.3.2.45 `w:w`, which it multiplies.
+    pub width_scale: f32,
 }
 
 impl TypefaceEntry {
@@ -150,6 +155,7 @@ impl TypefaceEntry {
             instance: InstanceState::NotInstanced,
             synthesis: Synthesis::default(),
             vertical: None,
+            width_scale: 1.0,
         }
     }
 }
@@ -500,8 +506,13 @@ impl FontRegistry {
                     // set on the (already-cloned) entry this call owns.
                     entry.synthesis = Synthesis::compute(request, &selection.record.intrinsic);
                     if let resolve::ResolutionStep::Lookalike { via, .. } = selection.step {
-                        entry.vertical =
-                            substitutes::lookalikes_for(via).map(|lookalike| lookalike.vertical);
+                        if let Some(lookalike) = substitutes::lookalikes_for(via) {
+                            let face = &selection.record.intrinsic;
+                            entry.vertical = Some(lookalike.vertical);
+                            entry.width_scale = lookalike
+                                .widths
+                                .of(face.is_already_bold(), face.is_italic());
+                        }
                     }
                     return entry;
                 }
@@ -623,6 +634,7 @@ impl FontRegistry {
                 instance: InstanceState::NotInstanced,
                 synthesis: Synthesis::default(),
                 vertical: None,
+                width_scale: 1.0,
             });
         };
 
@@ -667,6 +679,7 @@ impl FontRegistry {
                     instance: InstanceState::Baked(instance.clone()),
                     synthesis: Synthesis::default(),
                     vertical: None,
+                    width_scale: 1.0,
                 })
             }
             Err(reason) => {
@@ -701,6 +714,7 @@ impl FontRegistry {
                             },
                             synthesis: Synthesis::default(),
                             vertical: None,
+                            width_scale: 1.0,
                         })
                     }
                     None => {
@@ -716,6 +730,7 @@ impl FontRegistry {
                             instance: InstanceState::NotInstanced,
                             synthesis: Synthesis::default(),
                             vertical: None,
+                            width_scale: 1.0,
                         })
                     }
                 }

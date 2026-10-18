@@ -421,6 +421,7 @@ mod tests {
             origin: TypefaceOrigin::System { typeface_id: id },
             synthesis: Synthesis::default(),
             vertical: None,
+            width_scale: 1.0,
         }
     }
 

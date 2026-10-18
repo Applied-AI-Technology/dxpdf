@@ -124,6 +124,9 @@ impl<'r> TextMeasurer<'r> {
             font_props.bold,
             font_props.italic,
         );
+        // §17.3.2.45 `w:w`, and the stretch of a look-alike set to the widths
+        // of the face it stands in for (`FontCache::width_scale`).
+        let scale_x = font_props.text_scale * font_cache.width_scale(slot);
         let font = font_cache.font(slot);
 
         // Metrics depend only on the font; the raw `measure_str` width only on
@@ -169,7 +172,7 @@ impl<'r> TextMeasurer<'r> {
         // Applies to glyph widths only — character spacing (§17.3.2.35)
         // is independent and is not scaled (the spec keeps the two
         // separate so kerning in points is unchanged by character scale).
-        let scaled_width = Pt::new(width * font_props.text_scale);
+        let scaled_width = Pt::new(width * scale_x);
 
         // §17.3.2.35: include character spacing in the measured width so line
         // fitting accounts for the extra inter-character space. The unit is a
@@ -211,18 +214,7 @@ impl<'r> TextMeasurer<'r> {
         shaping: crate::render::shape::Shaping,
     ) -> Option<ShapedMeasure> {
         let shaper = self.cluster_shaper.as_ref()?;
-        let typeface = {
-            let mut font_cache = self.font_cache.borrow_mut();
-            font_cache
-                .get(
-                    self.registry,
-                    &font_props.family,
-                    font_props.size,
-                    font_props.bold,
-                    font_props.italic,
-                )
-                .typeface()
-        };
+        let (typeface, scale_x) = self.typeface_and_scale(font_props);
         let run = shaper
             .shape_with(&typeface, text, f32::from(font_props.size), shaping)
             .ok()?;
@@ -252,8 +244,7 @@ impl<'r> TextMeasurer<'r> {
                     ) else {
                         continue;
                     };
-                    let pair =
-                        table.pair_at(glyph(left), glyph(right), size) * font_props.text_scale;
+                    let pair = table.pair_at(glyph(left), glyph(right), size) * scale_x;
                     if pair != 0.0 {
                         pairs[slot] += pair;
                         any = true;
@@ -266,7 +257,7 @@ impl<'r> TextMeasurer<'r> {
         };
         Some(ShapedMeasure {
             // §17.3.2.45 applies to glyph advances however they were obtained.
-            advance: run.total_advance * font_props.text_scale,
+            advance: run.total_advance * scale_x,
             kerning,
         })
     }
@@ -276,23 +267,30 @@ impl<'r> TextMeasurer<'r> {
     /// fragments of one kerned run form where a line-break opportunity
     /// separates them.
     pub fn kern_pair(&self, font_props: &FontProps, left: char, right: char) -> f32 {
-        let typeface = {
-            let mut font_cache = self.font_cache.borrow_mut();
-            font_cache
-                .get(
-                    self.registry,
-                    &font_props.family,
-                    font_props.size,
-                    font_props.bold,
-                    font_props.italic,
-                )
-                .typeface()
-        };
+        let (typeface, scale_x) = self.typeface_and_scale(font_props);
         let Some(table) = self.pair_kerning(&typeface) else {
             return 0.0;
         };
         let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
-        table.pair_at(glyph(left), glyph(right), f32::from(font_props.size)) * font_props.text_scale
+        table.pair_at(glyph(left), glyph(right), f32::from(font_props.size)) * scale_x
+    }
+
+    /// `font_props`' typeface, and the horizontal scale its advances take:
+    /// §17.3.2.45 `w:w` times a look-alike's stretch (`FontCache::width_scale`).
+    fn typeface_and_scale(&self, font_props: &FontProps) -> (skia_safe::Typeface, f32) {
+        let mut font_cache = self.font_cache.borrow_mut();
+        let (slot, font) = font_cache.get_indexed(
+            self.registry,
+            &font_props.family,
+            font_props.size,
+            font_props.bold,
+            font_props.italic,
+        );
+        let typeface = font.typeface();
+        (
+            typeface,
+            font_props.text_scale * font_cache.width_scale(slot),
+        )
     }
 
     /// `typeface`'s pair kerning, read once per render.
@@ -314,16 +312,7 @@ impl<'r> TextMeasurer<'r> {
     /// is zero. `None` when the face kerns no pairs or no pair in `text`
     /// is kerned.
     pub fn kerning(&self, text: &str, font_props: &FontProps) -> Option<std::rc::Rc<[f32]>> {
-        let mut font_cache = self.font_cache.borrow_mut();
-        let font = font_cache.get(
-            self.registry,
-            &font_props.family,
-            font_props.size,
-            font_props.bold,
-            font_props.italic,
-        );
-        let typeface = font.typeface();
-        drop(font_cache);
+        let (typeface, scale_x) = self.typeface_and_scale(font_props);
         let table = self.pair_kerning(&typeface)?;
         let glyph = |c: char| typeface.unichar_to_glyph(c as i32);
         let units: Vec<&str> = crate::render::spacing::units(text).collect();
@@ -334,7 +323,7 @@ impl<'r> TextMeasurer<'r> {
             let (Some(left), Some(right)) = (w[0].chars().last(), w[1].chars().next()) else {
                 continue;
             };
-            let pair = table.pair_at(glyph(left), glyph(right), size) * font_props.text_scale;
+            let pair = table.pair_at(glyph(left), glyph(right), size) * scale_x;
             if pair != 0.0 {
                 pairs[i] = pair;
                 any = true;
@@ -527,6 +516,36 @@ mod tests {
             w_100.raw(),
             w_150.raw(),
         );
+    }
+
+    /// A look-alike set to the widths of the face it stands in for measures
+    /// its text that much wider: Caladea standing in for Cambria is stretched
+    /// to Cambria's run of text (`LOOKALIKE_SUBSTITUTIONS`), and named as
+    /// itself is not. Asked of a host whose only font is a fixture installed
+    /// as "Caladea", so the factor is the only difference; `w:w` multiplies it.
+    #[test]
+    fn a_look_alike_measures_at_the_original_s_widths() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test-files/fonts/DxSans-Regular.ttf"
+        );
+        let bytes = std::fs::read(path).expect("fixture");
+        let typeface = skia_safe::FontMgr::new()
+            .new_from_data(&bytes, None)
+            .expect("fixture opens");
+        let mut host = skia_safe::textlayout::TypefaceFontProvider::new();
+        host.register_typeface(typeface, Some("Caladea"));
+        let registry = FontRegistry::new(host.into());
+        let measurer = TextMeasurer::new(&registry);
+        let width = |family: &str, scale: f32| {
+            let mut fp = fp_at_scale(scale);
+            fp.family = Rc::from(family);
+            measurer.measure("scaling sample", &fp).0.raw()
+        };
+        let own = width("Caladea", 1.0);
+        assert!(own > 0.0, "the fixture measures");
+        assert!((width("Cambria", 1.0) / own - 1.046).abs() < 1e-4);
+        assert!((width("Cambria", 0.8) / own - 1.046 * 0.8).abs() < 1e-4);
     }
 
     #[test]

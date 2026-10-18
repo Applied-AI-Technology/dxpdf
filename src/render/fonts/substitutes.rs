@@ -111,6 +111,13 @@ pub(crate) fn strip_weight_suffix(name: &str) -> Option<&str> {
 /// `hhea` metrics, and a look-alike is measured with those
 /// ([`TypefaceEntry::vertical`](super::TypefaceEntry::vertical)), so a line
 /// holding one stands as tall as Word makes it and nothing below it moves.
+///
+/// Where a look-alike is narrower or wider than the original all through, it
+/// is also stretched to the original's run of text ([`FaceWidths`],
+/// [`TypefaceEntry::width_scale`](super::TypefaceEntry::width_scale)): the
+/// glyphs keep their shapes, widened as §17.3.2.45 `w:w` widens them, and a
+/// paragraph wraps where the original wraps it far more often than on the
+/// look-alike's own widths.
 /// Caladea's own line is 2% shorter than Cambria's, Imperial Script's 3%
 /// taller than Edwardian's and Indie Flower's 17% taller than Bradley Hand's.
 pub(crate) const LOOKALIKE_SUBSTITUTIONS: &[Lookalike] = &[
@@ -124,6 +131,17 @@ pub(crate) const LOOKALIKE_SUBSTITUTIONS: &[Lookalike] = &[
             descent: 455.0 / 2048.0,
             line_gap: 0.0,
         },
+        // Cambria's run of English text over Caladea's, per face, over a
+        // 20,000-character sample of prose: Caladea is 4.4% narrower in
+        // Regular and 1.1% in Bold Italic. Stretched by these, the words of
+        // albanyny's SpecialEventPermitTemplate are 1.5% off Cambria's on
+        // average rather than 4%.
+        widths: FaceWidths {
+            regular: 1.046,
+            bold: 1.022,
+            italic: 1.034,
+            bold_italic: 1.011,
+        },
     },
     Lookalike {
         family: "Edwardian Script ITC",
@@ -134,6 +152,7 @@ pub(crate) const LOOKALIKE_SUBSTITUTIONS: &[Lookalike] = &[
             descent: 672.0 / 2048.0,
             line_gap: 0.0,
         },
+        widths: FaceWidths::NATURAL,
     },
     Lookalike {
         family: "Bradley Hand ITC",
@@ -144,16 +163,48 @@ pub(crate) const LOOKALIKE_SUBSTITUTIONS: &[Lookalike] = &[
             descent: 815.0 / 2048.0,
             line_gap: 0.0,
         },
+        widths: FaceWidths::NATURAL,
     },
 ];
 
 /// A face with no metric-compatible clone, the free faces that look like it,
-/// and the vertical metrics they stand in with.
+/// and the vertical metrics and widths they stand in with.
 #[derive(Debug)]
 pub(crate) struct Lookalike {
     pub family: &'static str,
     pub substitutes: &'static [&'static str],
     pub vertical: VerticalMetrics,
+    pub widths: FaceWidths,
+}
+
+/// How much wider the original sets a run of text than its look-alike, per
+/// face of the family — the factor the look-alike's advances are stretched by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct FaceWidths {
+    pub regular: f32,
+    pub bold: f32,
+    pub italic: f32,
+    pub bold_italic: f32,
+}
+
+impl FaceWidths {
+    /// The look-alike's own widths, for a face no stretch brings nearer.
+    pub const NATURAL: Self = Self {
+        regular: 1.0,
+        bold: 1.0,
+        italic: 1.0,
+        bold_italic: 1.0,
+    };
+
+    /// The factor for the face resolution chose.
+    pub fn of(&self, bold: bool, italic: bool) -> f32 {
+        match (bold, italic) {
+            (false, false) => self.regular,
+            (true, false) => self.bold,
+            (false, true) => self.italic,
+            (true, true) => self.bold_italic,
+        }
+    }
 }
 
 /// A face's line metrics as fractions of its em, all positive: the `hhea`
@@ -318,5 +369,22 @@ mod tests {
             Some("Cambria")
         );
         assert!(lookalikes_for("Cambria Math").is_none());
+    }
+
+    /// Caladea is stretched to Cambria's widths face by face; the script
+    /// look-alikes keep their own.
+    #[test]
+    fn a_look_alike_is_stretched_per_face() {
+        let cambria = lookalikes_for("Cambria").expect("Cambria has a look-alike");
+        assert_eq!(cambria.widths.of(false, false), 1.046);
+        assert_eq!(cambria.widths.of(true, false), 1.022);
+        assert_eq!(cambria.widths.of(false, true), 1.034);
+        assert_eq!(cambria.widths.of(true, true), 1.011);
+        for script in ["Edwardian Script ITC", "Bradley Hand ITC"] {
+            assert_eq!(
+                lookalikes_for(script).map(|e| e.widths),
+                Some(FaceWidths::NATURAL)
+            );
+        }
     }
 }
