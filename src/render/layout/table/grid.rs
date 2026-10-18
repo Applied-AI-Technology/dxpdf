@@ -159,12 +159,21 @@ fn cell_has_nested_table(cell: &TableCellInput) -> bool {
 /// document, so the merge rows carry no authored heights for a renderer to
 /// defer to instead of computing one.
 ///
+/// The span already holds the room its rows reserve between them for borders
+/// (`border_gaps_below`, each row's gap under it): a merged cell spanning a
+/// bordered boundary in another column fits in the rows, gaps and all, rather
+/// than taking its content height on top of the gap. Word sets a three-row
+/// merge whose neighbouring column draws a 0.5pt line between its first two
+/// rows at the merged content's height, not 0.5pt more
+/// (`test-files/vmerge-excess.docx`, albanyny's delinquency notice).
+///
 /// A lone `Restart` with no `Continue` below it is not a span, and is sized by
 /// the normal row-height path in `measure_table_rows` instead.
 pub(super) fn expand_rows_for_vmerge(
     rows: &[TableRowInput],
     row_cell_layouts: &[Vec<CellLayoutEntry>],
     row_heights: &mut [Pt],
+    border_gaps_below: &[Pt],
 ) {
     for (row_idx, row) in rows.iter().enumerate() {
         for (cell_ci, cell) in row.cells.iter().enumerate() {
@@ -191,7 +200,11 @@ pub(super) fn expand_rows_for_vmerge(
             // The whole shortfall lands on the span's last row — see this
             // function's doc for the render that settled it. Every other row in
             // the span keeps the height its own contents earned.
-            let spanned: Pt = row_heights[row_idx..=last_merged_row].iter().copied().sum();
+            let spanned: Pt = row_heights[row_idx..=last_merged_row]
+                .iter()
+                .chain(&border_gaps_below[row_idx..last_merged_row])
+                .copied()
+                .sum();
             if content_h > spanned {
                 row_heights[last_merged_row] += content_h - spanned;
             }
@@ -623,7 +636,7 @@ mod tests {
         let layouts = vec![vec![layout_entry(84.0, 0)], vec![layout_entry(0.0, 0)]];
         let mut heights = [Pt::new(14.0), Pt::new(14.0)];
 
-        expand_rows_for_vmerge(&rows, &layouts, &mut heights);
+        expand_rows_for_vmerge(&rows, &layouts, &mut heights, &[Pt::ZERO; 8]);
 
         // 84pt of content over a 28pt span → 56pt of overflow, all of it onto
         // the second row. The first keeps the 14pt its own contents earned.
@@ -649,7 +662,7 @@ mod tests {
         let layouts = vec![vec![layout_entry(10.0, 0)], vec![layout_entry(0.0, 0)]];
         let mut heights = [Pt::new(30.0), Pt::new(30.0)];
 
-        expand_rows_for_vmerge(&rows, &layouts, &mut heights);
+        expand_rows_for_vmerge(&rows, &layouts, &mut heights, &[Pt::ZERO; 8]);
 
         assert_eq!(heights[0].raw(), 30.0);
         assert_eq!(heights[1].raw(), 30.0);
@@ -670,7 +683,7 @@ mod tests {
         let layouts = vec![vec![layout_entry(84.0, 0)]];
         let mut heights = [Pt::new(14.0)];
 
-        expand_rows_for_vmerge(&rows, &layouts, &mut heights);
+        expand_rows_for_vmerge(&rows, &layouts, &mut heights, &[Pt::ZERO; 8]);
 
         assert_eq!(
             heights[0].raw(),
@@ -702,7 +715,7 @@ mod tests {
         ];
         let mut heights = [Pt::new(14.0), Pt::new(14.0)];
 
-        expand_rows_for_vmerge(&rows, &layouts, &mut heights);
+        expand_rows_for_vmerge(&rows, &layouts, &mut heights, &[Pt::ZERO; 8]);
 
         assert_eq!(
             [heights[0].raw(), heights[1].raw()],
@@ -735,7 +748,7 @@ mod tests {
                 vec![layout_entry(0.0, 0), layout_entry(0.0, 1)],
             ];
             let mut heights = [Pt::new(14.0), Pt::new(14.0)];
-            expand_rows_for_vmerge(&rows, &layouts, &mut heights);
+            expand_rows_for_vmerge(&rows, &layouts, &mut heights, &[Pt::ZERO; 8]);
             [heights[0].raw(), heights[1].raw()]
         };
 
@@ -794,7 +807,7 @@ mod tests {
         ];
         let mut heights = [Pt::new(10.0); 3];
 
-        expand_rows_for_vmerge(&rows, &layouts, &mut heights);
+        expand_rows_for_vmerge(&rows, &layouts, &mut heights, &[Pt::ZERO; 8]);
 
         assert_eq!(heights[0].raw(), 10.0, "no restart row is ever grown");
         assert_eq!(

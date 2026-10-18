@@ -422,25 +422,33 @@ pub(super) fn measure_table_rows(
         row_cell_layouts.push(entries);
     }
 
-    // §17.4.84: distribute vMerge overflow.
-    expand_rows_for_vmerge(rows, &row_cell_layouts, &mut row_heights);
+    // With cell spacing there is no shared edge to reserve room for: every
+    // cell draws its own bottom border inside its own box, and the gap between
+    // rows is the spacing itself.
+    let border_gaps_below: Vec<Pt> = resolved_borders
+        .iter()
+        .enumerate()
+        .map(|(row_idx, borders)| {
+            strip_below(&rows[row_idx], rows.get(row_idx + 1), borders, cell_spacing)
+        })
+        .collect();
 
-    // Compute border gaps and assemble measured rows.
+    // §17.4.84: distribute vMerge overflow.
+    expand_rows_for_vmerge(
+        rows,
+        &row_cell_layouts,
+        &mut row_heights,
+        &border_gaps_below,
+    );
+
+    // Assemble measured rows.
     let measured_rows: Vec<MeasuredRow> = row_cell_layouts
         .into_iter()
         .zip(resolved_borders)
         .zip(row_heights.iter().zip(head_extras))
         .enumerate()
         .map(|(row_idx, ((entries, borders), (&height, head_extra)))| {
-            // With cell spacing there is no shared edge to reserve room for:
-            // every cell draws its own bottom border inside its own box, and
-            // the gap between rows is the spacing itself.
-            let border_gap_below = strip_below(
-                &rows[row_idx],
-                rows.get(row_idx + 1),
-                &borders,
-                cell_spacing,
-            );
+            let border_gap_below = border_gaps_below[row_idx];
             MeasuredRow {
                 entries,
                 borders,

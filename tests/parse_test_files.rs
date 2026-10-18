@@ -476,6 +476,7 @@ const ALL_FILES: &[&str] = &[
     "inline-effect-extent.docx",
     "space-run-height.docx",
     "cell-float-valign.docx",
+    "vmerge-excess.docx",
 ];
 
 #[test]
