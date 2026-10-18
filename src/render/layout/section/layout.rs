@@ -16,7 +16,7 @@ use super::floating_table::{
     FloatingTablePagePlacement,
 };
 use super::helpers::{
-    collapsed_spacing, drops_space_after_before_table, render_page_footnotes,
+    collapsed_spacing, drops_space_after_before_table, push_paragraph, render_page_footnotes,
     split_at_column_breaks, split_at_page_breaks, table_x_offset,
 };
 use super::types::{
@@ -109,6 +109,10 @@ struct PageLayoutState<'doc> {
     /// §17.3.1.9: whether that paragraph's own `contextualSpacing` drops its
     /// space after before a paragraph of its style.
     prev_contextual: bool,
+    /// §17.3.1.31: where on `current_page` the last paragraph's box
+    /// background is, for the next member of the box to continue
+    /// (`helpers::push_paragraph`).
+    box_fill: Option<usize>,
     /// Active floats on the current page (text wraps around these).
     page_floats: Vec<float::ActiveFloat>,
     /// Forward-scanned absolute floats from future paragraphs on this page.
@@ -178,6 +182,7 @@ impl<'doc> PageLayoutState<'doc> {
                 prev_space_after: c.prev_space_after,
                 prev_style_id: c.prev_style_id,
                 prev_contextual: c.prev_contextual,
+                box_fill: None,
                 page_floats: c.page_floats,
                 current_page_abs_floats: Vec::new(),
                 abs_floats_dirty: true,
@@ -203,6 +208,7 @@ impl<'doc> PageLayoutState<'doc> {
                 prev_space_after: Pt::ZERO,
                 prev_style_id: None,
                 prev_contextual: false,
+                box_fill: None,
                 page_floats: Vec::new(),
                 current_page_abs_floats: Vec::new(),
                 abs_floats_dirty: true,
@@ -325,6 +331,7 @@ impl<'doc> PageLayoutState<'doc> {
             LayoutedPage::new(ctx.config.page_size),
         ));
         self.page_index += 1;
+        self.box_fill = None;
         let bounds = ctx.page_bounds(self.page_index);
         self.page_top = bounds.top;
         self.cursor_y = bounds.top;
@@ -599,6 +606,9 @@ impl<'doc> PageReplayCheckpoint<'doc> {
         state.prev_space_after = self.prev_space_after;
         state.prev_style_id.clone_from(&self.prev_style_id);
         state.prev_contextual = self.prev_contextual;
+        // An index into the page as it was; the box resumes by geometry or
+        // not at all.
+        state.box_fill = None;
         state.page_floats.clone_from(&self.page_floats);
         state
             .current_page_abs_floats
@@ -1581,11 +1591,17 @@ fn emit_split_paragraph<'doc>(
             );
         }
         let segment_x = col_x(state.current_col);
-        for mut cmd in segment.commands {
+        let mut commands = segment.commands;
+        for cmd in &mut commands {
             cmd.shift_y(state.cursor_y);
             cmd.shift_x(segment_x);
-            state.current_page.commands.push(cmd);
         }
+        push_paragraph(
+            &mut state.current_page.commands,
+            commands,
+            style,
+            &mut state.box_fill,
+        );
         state.cursor_y += segment.size.height;
 
         // §17.11.12: reserve this segment's footnotes on the page its reference
@@ -2352,11 +2368,17 @@ pub(crate) fn layout_section_with_clearance(
                                 col_x(state.current_col).raw(),
                                 para.size.height.raw()
                             );
-                            for mut cmd in para.commands {
+                            let mut commands = para.commands;
+                            for cmd in &mut commands {
                                 cmd.shift_y(state.cursor_y);
                                 cmd.shift_x(col_x(state.current_col));
-                                state.current_page.commands.push(cmd);
                             }
+                            push_paragraph(
+                                &mut state.current_page.commands,
+                                commands,
+                                &effective_style,
+                                &mut state.box_fill,
+                            );
                             state.cursor_y += para.size.height;
                         }
                         // #86: mark that content of this paragraph has landed

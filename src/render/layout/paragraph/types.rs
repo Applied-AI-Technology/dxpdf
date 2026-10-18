@@ -126,8 +126,9 @@ pub struct ParagraphStyle {
 /// As converted it is the paragraph's own `w:pBdr`; grouping
 /// (`build::group_paragraph_borders`) then makes it this paragraph's part of
 /// the box it shares with its neighbours — dropping the `top` of one that
-/// joins the paragraph above (or setting the box's `between` there) and the
-/// `bottom` of one the paragraph below joins.
+/// joins the paragraph above (or setting the box's `between` there), the
+/// `bottom` of one the paragraph below joins, and setting how far the box
+/// reaches into its spacing (`reach`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ParagraphBorderStyle {
     pub top: Option<BorderLine>,
@@ -141,6 +142,18 @@ pub struct ParagraphBorderStyle {
     /// its `top`, if any, is the box's `between` line, which stands its
     /// `space` off the text on both sides (`ParagraphStyle::top_border_room`).
     pub joins_above: bool,
+    /// How far the side borders and shading reach into the space before and
+    /// after this paragraph where no top or bottom line closes them.
+    pub reach: BorderReach,
+}
+
+/// How far a paragraph's side borders and shading reach above and below its
+/// text, into its `space_before` and `space_after`, where it has no top or
+/// bottom line ([`ParagraphBorderStyle::reach`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct BorderReach {
+    pub above: Pt,
+    pub below: Pt,
 }
 
 /// A single border line for rendering.

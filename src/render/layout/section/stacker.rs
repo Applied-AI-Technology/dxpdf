@@ -4,7 +4,7 @@ use super::super::draw_command::DrawCommand;
 use super::super::float;
 use super::super::paragraph::place_paragraph;
 use super::super::table::layout_table;
-use super::helpers::table_x_offset;
+use super::helpers::{push_paragraph, table_x_offset};
 use super::types::{LayoutBlock, PageParity};
 use crate::render::dimension::Pt;
 use crate::render::geometry::PtRect;
@@ -89,6 +89,9 @@ pub fn stack_blocks(
 ) -> StackResult {
     let constraints = super::super::BoxConstraints::tight_width(content_width, Pt::INFINITY);
     let mut commands = Vec::new();
+    // §17.3.1.31: where in `commands` the last paragraph's box background is
+    // (`helpers::push_paragraph`).
+    let mut box_fill: Option<usize> = None;
     let mut cursor_y = Pt::ZERO;
     let mut prev_space_after = Pt::ZERO;
     let mut prev_style_id: Option<crate::model::StyleId> = None;
@@ -292,10 +295,16 @@ pub fn stack_blocks(
 
                 let para = placed.emit_full();
 
-                for mut cmd in para.commands {
+                let mut placed_commands = para.commands;
+                for cmd in &mut placed_commands {
                     cmd.shift_y(cursor_y);
-                    commands.push(cmd);
                 }
+                push_paragraph(
+                    &mut commands,
+                    placed_commands,
+                    &effective_style,
+                    &mut box_fill,
+                );
 
                 cursor_y += para.size.height;
 

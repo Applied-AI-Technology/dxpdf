@@ -101,6 +101,7 @@ pub(super) fn emit_segment_borders_and_shading(
     let left_line = borders.and_then(|b| b.left.as_ref());
     let right_line = borders.and_then(|b| b.right.as_ref());
     let between = borders.is_some_and(|b| b.joins_above) && top_line.is_some();
+    let reach = borders.map(|b| b.reach).unwrap_or_default();
     let para_left = style.indent_left;
     let para_right = constraints.max_width - style.indent_right;
 
@@ -120,14 +121,16 @@ pub(super) fn emit_segment_borders_and_shading(
         style.space_before + if between { line.space } else { Pt::ZERO }
     };
     // Where the sides and shading begin when no rule closes the box above:
-    // right under the space before.
-    let reach_top = style.space_before;
+    // as far into the space before as the box reaches — no further than the
+    // space this segment was laid out with, which is none at a page top.
+    let reach_top = style.space_before - reach.above.min(style.space_before);
     let bottom_rule_top = |line: &super::types::BorderLine| content_bottom + line.space;
 
     // The sides' extent, in up to two runs: a `between` line breaks them.
     let mut side_runs: Vec<(Pt, Pt)> = Vec::with_capacity(2);
     let side_bottom = match bottom_line {
         Some(line) if draw_bottom => bottom_rule_top(line),
+        _ if draw_bottom => content_bottom + reach.below,
         _ => content_bottom,
     };
     match top_line {

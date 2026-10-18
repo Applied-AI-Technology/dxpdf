@@ -1735,6 +1735,49 @@ mod tests {
         );
     }
 
+    /// A paragraph's sides reach into its space before as far as grouping
+    /// says (`BorderReach::above`), and no further than the space it was laid
+    /// out with: none at a page top, where section layout drops it, so they
+    /// never rise above the paragraph into the margin.
+    #[test]
+    fn side_borders_reach_no_further_than_the_space_before_kept() {
+        let side_top = |space_before: f32, above: f32| {
+            let style = ParagraphStyle {
+                space_before: Pt::new(space_before),
+                borders: Some(ParagraphBorderStyle {
+                    left: Some(border(1.0)),
+                    reach: BorderReach {
+                        above: Pt::new(above),
+                        below: Pt::ZERO,
+                    },
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            let frags = [text_frag("w ", 20.0)];
+            let constraints = body_constraints(120.0);
+            let placed = place_paragraph(&frags, &constraints, &style, Pt::new(14.0), None);
+            let whole = placed.emit_split_segment(0, 1, true, true);
+            whole
+                .commands
+                .iter()
+                .find_map(|c| match c {
+                    DrawCommand::Line { line, .. } if line.start.x == line.end.x => {
+                        Some(line.start.y.raw().min(line.end.y.raw()))
+                    }
+                    _ => None,
+                })
+                .expect("a left side")
+        };
+        assert_eq!(side_top(12.0, 12.0), 0.0, "through all of its space before");
+        assert_eq!(side_top(12.0, 4.0), 8.0, "or the part grouping gives it");
+        assert_eq!(
+            side_top(0.0, 12.0),
+            0.0,
+            "and none of what it was not given"
+        );
+    }
+
     #[test]
     fn split_segment_draws_border_box_per_page() {
         // §17.3.1.24/§17.3.1.31: a bordered, shaded paragraph split across three

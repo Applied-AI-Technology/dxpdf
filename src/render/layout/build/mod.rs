@@ -152,13 +152,49 @@ pub fn build_section_blocks(
 /// paragraphs ends the group. holdenma's notices run their instructions
 /// through paragraphs that each declare the same 0.75pt bottom border, and
 /// Word draws one line under the last of them.
+///
+/// # The box is unbroken
+///
+/// Measured against `test-files/paragraph-side-borders.docx`: Word draws a
+/// group's side borders, and its shading, unbroken from the first member's
+/// top to the last one's bottom, through the spacing between members. Each
+/// member reaches into that spacing ([`BorderReach`]) so that neighbours
+/// meet: the space that separates two of them, once collapsed
+/// (`section::paragraph_gap`, which placement uses too), is the upper
+/// one's below as far as its own `space_after` goes, and the lower one's
+/// above for the rest (S3, S10, S11). At the box's own top and bottom the
+/// sides reach through the first member's `space_before` and the last one's
+/// `space_after` (S2, S9, S11, S12), unless a top or bottom line closes the
+/// box there or the box is shaded, which keeps both outside (S5, S8, S13).
 pub(super) fn group_paragraph_borders(blocks: &mut [LayoutBlock]) {
-    let declared: Vec<Option<crate::render::layout::paragraph::ParagraphBorderStyle>> = blocks
+    use crate::render::layout::paragraph::{BorderReach, ParagraphBorderStyle};
+    let declared: Vec<Option<ParagraphBorderStyle>> = blocks
         .iter()
         .map(|b| match b {
             LayoutBlock::Paragraph { style, .. } => style.borders.clone(),
             LayoutBlock::Table { .. } => None,
         })
+        .collect();
+    // The collapsed space above each paragraph that follows a paragraph, and
+    // that paragraph's own `space_after`.
+    let above: Vec<Option<(Pt, Pt)>> = (0..blocks.len())
+        .map(
+            |i| match (i.checked_sub(1).map(|p| &blocks[p]), &blocks[i]) {
+                (
+                    Some(LayoutBlock::Paragraph { style: prev, .. }),
+                    LayoutBlock::Paragraph { style, .. },
+                ) => Some((
+                    crate::render::layout::section::paragraph_gap(
+                        prev.space_after,
+                        prev.contextual_spacing,
+                        prev.style_id.as_ref(),
+                        style,
+                    ),
+                    prev.space_after,
+                )),
+                _ => None,
+            },
+        )
         .collect();
     for i in 0..blocks.len() {
         let Some(own) = &declared[i] else { continue };
@@ -166,7 +202,10 @@ pub(super) fn group_paragraph_borders(blocks: &mut [LayoutBlock]) {
         let joins_next = declared
             .get(i + 1)
             .is_some_and(|next| next.as_ref() == Some(own));
+        let next_gap = above.get(i + 1).copied().flatten().map(|(gap, _)| gap);
         if let LayoutBlock::Paragraph { style, .. } = &mut blocks[i] {
+            let shaded = style.shading.is_some();
+            let (before, after) = (style.space_before, style.space_after);
             if let Some(borders) = style.borders.as_mut() {
                 if joins_previous {
                     borders.top = borders.between;
@@ -175,6 +214,26 @@ pub(super) fn group_paragraph_borders(blocks: &mut [LayoutBlock]) {
                 if joins_next {
                     borders.bottom = None;
                 }
+                let open_top = borders.top.is_none() && !shaded;
+                let open_bottom = borders.bottom.is_none() && !shaded;
+                // Between two members the upper one takes the gap as far as
+                // its own `space_after` goes, and the lower one the rest.
+                borders.reach = BorderReach {
+                    above: if joins_previous {
+                        above[i].map_or(Pt::ZERO, |(gap, prev_after)| gap - prev_after.min(gap))
+                    } else if open_top {
+                        before
+                    } else {
+                        Pt::ZERO
+                    },
+                    below: if joins_next {
+                        next_gap.map_or(Pt::ZERO, |gap| after.min(gap))
+                    } else if open_bottom {
+                        after
+                    } else {
+                        Pt::ZERO
+                    },
+                };
             }
         }
     }

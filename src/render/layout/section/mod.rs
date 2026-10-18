@@ -65,6 +65,7 @@ mod layout;
 mod stacker;
 mod types;
 
+pub(crate) use helpers::paragraph_gap;
 pub use layout::layout_section;
 pub(crate) use layout::layout_section_with_clearance;
 pub(crate) use layout::SectionStart;

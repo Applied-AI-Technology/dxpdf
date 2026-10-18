@@ -7,6 +7,67 @@ use super::super::paragraph::{layout_paragraph, ParagraphStyle};
 use super::{FOOTNOTE_SEPARATOR_GAP, FOOTNOTE_SEPARATOR_LINE_WIDTH, FOOTNOTE_SEPARATOR_RATIO};
 use crate::render::dimension::Pt;
 
+/// §17.3.1.24/§17.3.1.31: append a placed paragraph's commands, already in
+/// page coordinates, to `page` — continuing the background of the shaded box
+/// directly above it rather than abutting it.
+///
+/// A box's shading runs unbroken through its members
+/// (`build::group_paragraph_borders`), and Word paints it a rect per member,
+/// each just before that member's text
+/// (`test-files/paragraph-side-borders.docx` S8). Two fills that only abut
+/// leave a seam under a rasterizer that anti-aliases each on its own
+/// (`draw_command::coalesce_abutting_rects`), and the member's text between
+/// them keeps that pass from fusing them. So a member that joins a box whose
+/// background is the rect `box_fill` names grows that rect down over its own
+/// instead, and paints the rest — stripes, text, borders — where it always
+/// did: the box's background is behind all of its content, which differs
+/// from Word's order only where a glyph of the member above reaches into the
+/// one below.
+///
+/// `box_fill` is where in `page` the background of the last paragraph pushed
+/// is, if it had one. The rects must agree exactly — colour, left edge,
+/// width, and the one's bottom on the other's top — so a record left over
+/// from anything else extends nothing.
+pub(super) fn push_paragraph(
+    page: &mut Vec<DrawCommand>,
+    commands: Vec<DrawCommand>,
+    style: &ParagraphStyle,
+    box_fill: &mut Option<usize>,
+) {
+    let shaded_box = style.shading.is_some() && style.borders.is_some();
+    let joins = shaded_box && style.borders.as_ref().is_some_and(|b| b.joins_above);
+    let mut commands = commands.into_iter().peekable();
+    if let (Some(at), Some(DrawCommand::Rect { rect, color })) =
+        (box_fill.filter(|_| joins), commands.peek())
+    {
+        if let Some(DrawCommand::Rect {
+            rect: above,
+            color: above_color,
+        }) = page.get_mut(at)
+        {
+            let meets = (above.origin.y + above.size.height - rect.origin.y)
+                .raw()
+                .abs()
+                < 0.01;
+            if above_color == color
+                && above.origin.x == rect.origin.x
+                && above.size.width == rect.size.width
+                && meets
+            {
+                above.size.height = rect.origin.y + rect.size.height - above.origin.y;
+                commands.next();
+                page.extend(commands);
+                return;
+            }
+        }
+    }
+    *box_fill = match commands.peek() {
+        Some(DrawCommand::Rect { .. }) if shaded_box => Some(page.len()),
+        _ => None,
+    };
+    page.extend(commands);
+}
+
 /// Split a fragment slice at break markers of a given kind.
 /// Returns a vec of slices; the break fragments themselves are excluded.
 fn split_at_breaks(fragments: &[Fragment], is_break: fn(&Fragment) -> bool) -> Vec<&[Fragment]> {
@@ -45,6 +106,20 @@ pub(super) fn collapsed_spacing(
     prev_style_id: Option<&crate::model::StyleId>,
     style: &ParagraphStyle,
 ) -> Pt {
+    prev_space_after + style.space_before
+        - paragraph_gap(prev_space_after, prev_contextual, prev_style_id, style)
+}
+
+/// §17.3.1.9: the space that separates two paragraphs once it has collapsed
+/// ([`collapsed_spacing`]) — the larger of the first one's `space_after` and
+/// the second's `space_before`, each dropped by its own `contextualSpacing`
+/// facing a paragraph of its style.
+pub(crate) fn paragraph_gap(
+    prev_space_after: Pt,
+    prev_contextual: bool,
+    prev_style_id: Option<&crate::model::StyleId>,
+    style: &ParagraphStyle,
+) -> Pt {
     let same_style = style.style_id.is_some() && style.style_id.as_ref() == prev_style_id;
     let after = if prev_contextual && same_style {
         Pt::ZERO
@@ -56,7 +131,7 @@ pub(super) fn collapsed_spacing(
     } else {
         style.space_before
     };
-    prev_space_after + style.space_before - after.max(before)
+    after.max(before)
 }
 
 /// §17.3.1.9: whether a paragraph's `contextualSpacing` drops its space after

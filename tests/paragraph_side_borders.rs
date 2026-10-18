@@ -1,11 +1,15 @@
-//! §17.3.1.24 the left and right borders of a bordered paragraph, over
+//! §17.3.1.24 the left and right borders of a bordered paragraph and of the
+//! box consecutive bordered paragraphs share, over
 //! `test-files/paragraph-side-borders.docx`
 //! (`scripts/make_paragraph_side_borders_fixture.py`), measured in Word (Word
 //! for Mac 16, PDF export, 2026-10-17).
 //!
 //! A side border stands its `w:space` and 1.35pt more off the text, its line
-//! outside that, and the top and bottom lines run over the corners. A
-//! `w:between` line stands its space off the text on both sides.
+//! outside that, and the top and bottom lines run over the corners. A box's
+//! sides run unbroken through the spacing between its paragraphs, and through
+//! the first one's space before and the last one's space after unless a top or
+//! bottom line closes it there or it is shaded. A `w:between` line stands its
+//! space off the text on both sides and breaks the sides.
 //!
 //! Every line is an exact 12pt one, so nothing here depends on a face. Word's
 //! numbers are quoted per case; they sit within 0.12pt of these, Word's own
@@ -49,6 +53,21 @@ fn strokes(page: &LayoutedPage) -> Vec<(Ink, bool)> {
 
 fn lines(page: &LayoutedPage) -> Vec<Ink> {
     strokes(page).into_iter().map(|(ink, _)| ink).collect()
+}
+
+fn fills(page: &LayoutedPage) -> Vec<Ink> {
+    page.commands
+        .iter()
+        .filter_map(|c| match c {
+            DrawCommand::Rect { rect, .. } => Some((
+                rect.origin.x.raw(),
+                rect.origin.y.raw(),
+                rect.origin.x.raw() + rect.size.width.raw(),
+                rect.origin.y.raw() + rect.size.height.raw(),
+            )),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The vertical runs of the side border whose inner edge is at `inner` (the
@@ -169,11 +188,115 @@ fn the_inset_is_the_same_for_every_line_and_indent() {
     assert!(near(edge(&p[2], 95.0, 125.0), LEFT_INNER), "HF");
 }
 
-/// `w:between` stands its 1pt of space off the text on both sides, after the
-/// space that collapsed between the two paragraphs. Word: the lines at
-/// 311.04–312.0 and 331.92–332.88 across the box.
+/// The box's sides run unbroken through the spacing between its paragraphs.
+/// Word: S2 124.08–178.08; S3 206.16–256.08; S10 94.08–150.0 (9pt before,
+/// 3pt after: the upper paragraph's run ends 3pt below its text, the lower
+/// one's starts there); S11 178.08–232.08.
 #[test]
-fn a_between_line_stands_off_both_paragraphs() {
+fn a_box_s_sides_run_through_the_space_between_its_paragraphs() {
+    let p = pages();
+    // Left and right only, 6pt after each: through the last one's space after.
+    assert_runs(
+        &left_runs(&p[0], LEFT_INNER, 120.0, 190.0),
+        &[(124.0, 178.0)],
+        "S2",
+    );
+    // Boxed, 3pt before and 6pt after: from the top line to the bottom one.
+    assert_runs(
+        &left_runs(&p[0], LEFT_INNER, 200.0, 270.0),
+        &[(206.0, 256.0)],
+        "S3",
+    );
+    // 9pt before, 3pt after.
+    assert_runs(
+        &left_runs(&p[1], LEFT_INNER, 90.0, 160.0),
+        &[(94.0, 150.0)],
+        "S10",
+    );
+    // 6pt before each, no lines: through the first one's space before.
+    assert_runs(
+        &left_runs(&p[1], LEFT_INNER, 170.0, 240.0),
+        &[(178.0, 232.0)],
+        "S11",
+    );
+}
+
+/// A lone paragraph's sides take in its space after too, and a box open at
+/// its foot reaches through its last one's. Word: S12 256.08–274.08, S9
+/// 654.0–708.0, S14 542.88–598.08.
+#[test]
+fn an_open_box_reaches_through_its_outer_space() {
+    let p = pages();
+    assert_runs(
+        &left_runs(&p[1], LEFT_INNER, 250.0, 280.0),
+        &[(256.0, 274.0)],
+        "S12",
+    );
+    assert_runs(
+        &left_runs(&p[0], LEFT_INNER, 650.0, 720.0),
+        &[(654.0, 708.0)],
+        "S9",
+    );
+    assert_runs(
+        &left_runs(&p[1], LEFT_INNER, 540.0, 610.0),
+        &[(543.0, 598.0)],
+        "S14",
+    );
+    // S14 has no right border: its top line ends 1.35pt past the text.
+    assert_line(&p[1], (LEFT_INNER - 1.0, 542.0, 541.35, 543.0), "S14 top");
+}
+
+/// A shaded box keeps its outer space outside, and fills between its sides
+/// when it has both, or 1.35pt past the text when it has one. Word: S5's
+/// fill 70.56–541.44 by 378.0–426.0, S8's 66.72–545.28 by 576.0–624.0, S13's
+/// sides and fill 469.92–517.92.
+#[test]
+fn a_shaded_box_keeps_its_outer_space_outside() {
+    let p = pages();
+    assert_runs(
+        &left_runs(&p[0], LEFT_INNER, 370.0, 440.0),
+        &[(378.0, 426.0)],
+        "S5",
+    );
+    assert_runs(
+        &left_runs(&p[1], LEFT_INNER, 465.0, 525.0),
+        &[(470.0, 518.0)],
+        "S13",
+    );
+    let fill = |page: &LayoutedPage, from: f32, to: f32| -> Ink {
+        let mut f: Vec<Ink> = fills(page)
+            .into_iter()
+            .filter(|r| r.1 >= from && r.3 <= to)
+            .collect();
+        f.sort_by(|a, b| a.1.total_cmp(&b.1));
+        assert!(!f.is_empty(), "a fill in {from}..{to}");
+        (f[0].0, f[0].1, f[0].2, f[f.len() - 1].3)
+    };
+    let s5 = fill(&p[0], 370.0, 440.0);
+    assert!(
+        near(s5.0, 70.65) && near(s5.2, 541.35) && near(s5.1, 378.0) && near(s5.3, 426.0),
+        "S5 fill {s5:?}"
+    );
+    let s8 = fill(&p[0], 570.0, 640.0);
+    assert!(
+        near(s8.0, LEFT_INNER) && near(s8.2, RIGHT_INNER) && near(s8.1, 576.0) && near(s8.3, 624.0),
+        "S8 fill {s8:?}"
+    );
+    // Word paints a rect per member; one rect down the box leaves no seam
+    // where two would meet (`section::helpers::push_paragraph`).
+    let members = fills(&p[0])
+        .into_iter()
+        .filter(|r| r.1 >= 570.0 && r.3 <= 640.0)
+        .count();
+    assert_eq!(members, 1, "S8's three members paint one fill");
+}
+
+/// `w:between` stands its 1pt of space off the text on both sides, after the
+/// space that collapsed between the two paragraphs, and breaks the sides.
+/// Word: the lines at 311.04–312.0 and 331.92–332.88 across the box, the sides
+/// 291.12–311.04, 312.0–331.92 and 332.88–347.04.
+#[test]
+fn a_between_line_stands_off_both_paragraphs_and_breaks_the_sides() {
     let p = &pages()[0];
     assert_line(
         p,
@@ -184,5 +307,10 @@ fn a_between_line_stands_off_both_paragraphs() {
         p,
         (LEFT_INNER - 1.0, 332.0, RIGHT_INNER + 1.0, 333.0),
         "S4 second between",
+    );
+    assert_runs(
+        &left_runs(p, LEFT_INNER, 285.0, 360.0),
+        &[(291.0, 311.0), (312.0, 332.0), (333.0, 347.0)],
+        "S4 sides",
     );
 }
