@@ -62,8 +62,10 @@ pub(super) fn compute_line_placements(
             line,
             float_left: Pt::ZERO,
             float_right: Pt::ZERO,
-            // No floats, so a clearing break has nothing to clear.
+            // No floats, so a clearing break has nothing to clear and no
+            // picture to stand below.
             clear_after: Pt::ZERO,
+            skip_before: Pt::ZERO,
         })
         .collect();
     }
@@ -74,72 +76,80 @@ pub(super) fn compute_line_placements(
     let mut line_y = style.space_before + style.top_border_room();
 
     while frag_idx < fragments.len() {
-        let abs_y = style.page_y + line_y;
-        let (fl, fr) = super::super::float::float_adjustments_with_height(
-            &style.page_floats,
-            abs_y,
-            default_line_height,
-            style.page_x,
-            style.page_content_width,
-        );
-        let float_reduction = fl + fr;
-        let available = (content_width - float_reduction).max(Pt::ZERO);
-
         let is_first = placements.is_empty();
         let dc_adj = if placements.len() < drop_cap_lines {
             drop_cap_indent
         } else {
             Pt::ZERO
         };
-        let line_width = if is_first {
-            (available - first_line_adjustment).max(Pt::ZERO)
-        } else {
-            (available - dc_adj).max(Pt::ZERO)
-        };
-
-        // Fit one line at this width. Each call fits exactly one line, so the
+        // Fit one line at `abs_y`. Each call fits exactly one line, so the
         // geometry is *this* line's: its own float narrowing, and the
         // first-line indent only when it really is the first.
-        let remaining = &fragments[frag_idx..];
-        let line_geometry = PTabGeometry {
-            indent_first_line: if is_first {
-                ptab_geometry.indent_first_line
+        let fit_at = |abs_y: Pt| {
+            let (fl, fr) = super::super::float::float_adjustments_with_height(
+                &style.page_floats,
+                abs_y,
+                default_line_height,
+                style.page_x,
+                style.page_content_width,
+            );
+            let available = (content_width - (fl + fr)).max(Pt::ZERO);
+            let line_width = if is_first {
+                (available - first_line_adjustment).max(Pt::ZERO)
             } else {
-                Pt::ZERO
-            },
-            float_left: fl,
-            float_right: fr,
-            ..ptab_geometry
-        };
-        let fitted = super::super::line::fit_lines_with_first(
-            remaining,
-            line_width,
-            line_width,
-            line_geometry,
-            bidi_rtl,
-        );
-        let fitted_line = if let Some(first) = fitted.into_iter().next() {
-            super::super::line::FittedLine {
+                (available - dc_adj).max(Pt::ZERO)
+            };
+            let line_geometry = PTabGeometry {
+                indent_first_line: if is_first {
+                    ptab_geometry.indent_first_line
+                } else {
+                    Pt::ZERO
+                },
+                float_left: fl,
+                float_right: fr,
+                ..ptab_geometry
+            };
+            let first = super::super::line::fit_lines_with_first(
+                &fragments[frag_idx..],
+                line_width,
+                line_width,
+                line_geometry,
+                bidi_rtl,
+            )
+            .into_iter()
+            .next()?;
+            let fitted_line = super::super::line::FittedLine {
                 start: first.start + frag_idx,
                 end: first.end + frag_idx,
-                width: first.width,
-                height: first.height,
-                text_height: first.text_height,
-                overhang: first.overhang,
-                ascent: first.ascent,
-                has_break: first.has_break,
-            }
-        } else {
-            break;
+                ..first
+            };
+            let lh = line_box(
+                &fitted_line,
+                default_line_height,
+                &style.line_spacing,
+                style.auto_fit,
+            )
+            .height;
+            Some((fitted_line, lh, fl, fr))
         };
 
-        let lh = line_box(
-            &fitted_line,
-            default_line_height,
-            &style.line_spacing,
-            style.auto_fit,
-        )
-        .height;
+        // §20.4.2.18: a line that would meet a picture with text on neither
+        // side is fitted again below it, where other floats may narrow it
+        // differently.
+        let mut skip_before = Pt::ZERO;
+        let (fitted_line, lh, fl, fr) = loop {
+            let abs_y = style.page_y + line_y + skip_before;
+            let Some((fitted_line, lh, fl, fr)) = fit_at(abs_y) else {
+                return placements;
+            };
+            let clear = super::super::float::below_bands(&style.page_floats, abs_y, lh);
+            if clear > abs_y {
+                skip_before += clear - abs_y;
+                continue;
+            }
+            break (fitted_line, lh, fl, fr);
+        };
+        line_y += skip_before;
 
         // §17.3.3.1 `w:clear`: a line ended by a clearing break is followed
         // by the first line clear of the floats it names, not the next one.
@@ -170,6 +180,7 @@ pub(super) fn compute_line_placements(
             float_left: fl,
             float_right: fr,
             clear_after,
+            skip_before,
         });
         line_y += lh + clear_after;
     }
@@ -645,6 +656,7 @@ pub(super) fn emit_line_commands(
     for line_idx in line_range {
         let lp = &line_placements[line_idx];
         let line = &lp.line;
+        *cursor_y += lp.skip_before;
 
         // Drop cap lines get extra indent; after that, refit remaining lines at full width.
         let dc_offset = if line_idx < drop_cap_lines {

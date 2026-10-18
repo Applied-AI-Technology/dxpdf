@@ -47,6 +47,11 @@ struct LinePlacement {
     /// consumer of [`PlacedParagraph::line_height`] — emission, the split cut
     /// model — sees one height for one line. Zero for every other line.
     clear_after: Pt,
+    /// §20.4.2.18 `wrapTopAndBottom`: space above this line that it skips to
+    /// stand below a picture with no text beside it, where the line would
+    /// otherwise meet the picture (`float::below_bands`). Charged to this line
+    /// for the reason `clear_after` is. Zero for every other line.
+    skip_before: Pt,
 }
 
 /// Shared layout parameters threaded through `compute_line_placements` and
@@ -270,6 +275,7 @@ pub(crate) fn place_paragraph<'a>(
                     &style.line_spacing,
                     style.auto_fit,
                 );
+                y += lp.skip_before;
                 if i == n - 1 {
                     y += lb.baseline;
                     break;
@@ -292,7 +298,7 @@ pub(crate) fn place_paragraph<'a>(
                 &style.line_spacing,
                 style.auto_fit,
             );
-            (b.height + lp.clear_after, b.hang)
+            (lp.skip_before + b.height + lp.clear_after, b.hang)
         })
         .unzip();
 

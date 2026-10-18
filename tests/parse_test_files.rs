@@ -475,6 +475,7 @@ const ALL_FILES: &[&str] = &[
     "paragraph-side-borders.docx",
     "inline-effect-extent.docx",
     "space-run-height.docx",
+    "cell-float-valign.docx",
 ];
 
 #[test]

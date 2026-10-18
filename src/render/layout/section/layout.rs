@@ -760,9 +760,16 @@ fn register_paragraph_floats(
                 src_rect: fi.src_rect,
                 opacity: fi.opacity,
             });
-            if y_end > state.cursor_y {
-                state.cursor_y = y_end;
-            }
+            // §20.4.2.18: no text beside it — the lines that would meet it
+            // stand below it (`float::below_bands`), the ones above it stay.
+            state.page_floats.push(float::ActiveFloat {
+                page_x: fi.x.resolve(parity),
+                page_y_start: y_start,
+                page_y_end: y_end,
+                width: fi.size.width,
+                source: float::FloatSource::Image,
+                wrap_text: float::WrapTextSide::Neither,
+            });
         } else if fi.wrap_mode.registers_as_wrap_float() {
             let float_entry = float::ActiveFloat {
                 page_x: fi.x.resolve(parity) - fi.dist_left,
@@ -803,9 +810,15 @@ fn register_paragraph_floats(
                 effects: fs.effects.clone(),
             });
             emit_shape_text(state, fs, shape_y);
-            if y_end > state.cursor_y {
-                state.cursor_y = y_end;
-            }
+            // As a `wrapTopAndBottom` image above.
+            state.page_floats.push(float::ActiveFloat {
+                page_x: fs.x.resolve(parity),
+                page_y_start: y_start,
+                page_y_end: y_end,
+                width: fs.size.width,
+                source: float::FloatSource::Shape,
+                wrap_text: float::WrapTextSide::Neither,
+            });
         } else {
             let float_entry = float::ActiveFloat {
                 page_x: fs.x.resolve(parity) - fs.dist_left,
@@ -2045,7 +2058,7 @@ pub(crate) fn layout_section_with_clearance(
 
                 // Register floating images (both relative and absolute).
                 // §20.4.2.18: wrapTopAndBottom images are emitted immediately
-                // and cursor_y advances past them — they act as block spacers.
+                // and registered as bands no line may meet.
                 // §20.4.2.10: paragraph-relative floats use the content area
                 // top (after space_before), not the total paragraph box top.
                 let float_checkpoint = ParagraphFloatCheckpoint::capture(&state);

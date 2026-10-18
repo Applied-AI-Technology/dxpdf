@@ -103,6 +103,13 @@ pub fn stack_blocks(
     let mut cell_lines: Vec<CellLine> = Vec::new();
     let mut splittable = true;
     let mut overlay_bottom = Pt::ZERO;
+    // The deepest `wrapTopAndBottom` band. Contained like a float that wraps
+    // text: the stacked height reaches its bottom, so a cell grows around it
+    // and aligns on it — Word sizes a cell holding only an empty paragraph and
+    // a 33.25pt picture 25.95pt below it at 59.2pt, the picture's foot, not a
+    // line below the picture (`test-files/cell-float-valign.docx`). The cursor
+    // stays at the text, so what follows stands above the band if it fits.
+    let mut band_floor = Pt::ZERO;
 
     for (block_index, block) in blocks.iter().enumerate() {
         match block {
@@ -125,19 +132,17 @@ pub fn stack_blocks(
 
                 // Register floating images.
                 let content_top = cursor_y + effective_style.space_before;
-                // Where the paragraph would start with no `TopAndBottom` band,
-                // so the band's effect on the cursor can be told apart from it.
-                let pre_band_cursor = cursor_y;
-                // §20.4.2.18: `wrapTopAndBottom` floats occupy a band of their
-                // own above the paragraph and **stack** — each sits below the
-                // one before it, and the paragraph starts below the whole band.
-                // Tracks the band's running bottom so successive floats don't
-                // all resolve to `content_top` and draw on top of each other.
-                // Shared with the shape loop below, so a `TopAndBottom` image
-                // and shape on the same paragraph stack against each other too.
-                // `None` until the first one is placed, so a single float — and
-                // any negative `wp:posOffset` on it — is positioned exactly as
-                // before.
+                // §20.4.2.18: `wrapTopAndBottom` floats occupy a band with no
+                // text beside it, which the paragraph's lines stand clear of
+                // (`float::below_bands`) — a line that would meet it moves
+                // below it, one above it stays. Successive bands **stack**,
+                // each below the one before it: tracks the running bottom so
+                // they don't all resolve to `content_top` and draw on top of
+                // each other. Shared with the shape loop below, so a
+                // `TopAndBottom` image and shape on the same paragraph stack
+                // against each other too. `None` until the first one is
+                // placed, so a single float — and any negative `wp:posOffset`
+                // on it — is positioned exactly as before.
                 let mut band_bottom: Option<Pt> = None;
                 for fi in floating_images.iter() {
                     let y_start = fi.y.at(parity, content_top);
@@ -168,9 +173,15 @@ pub fn stack_blocks(
                             Some(prev) => prev.max(bottom),
                             None => bottom,
                         });
-                        if bottom > cursor_y {
-                            cursor_y = bottom;
-                        }
+                        page_floats.push(float::ActiveFloat {
+                            page_x: fi.x.resolve(parity),
+                            page_y_start: img_y,
+                            page_y_end: bottom,
+                            width: fi.size.width,
+                            source: float::FloatSource::Image,
+                            wrap_text: float::WrapTextSide::Neither,
+                        });
+                        band_floor = band_floor.max(bottom);
                     } else if fi.wrap_mode.registers_as_wrap_float() {
                         page_floats.push(float::ActiveFloat {
                             page_x: fi.x.resolve(parity) - fi.dist_left,
@@ -223,9 +234,15 @@ pub fn stack_blocks(
                             Some(prev) => prev.max(bottom),
                             None => bottom,
                         });
-                        if bottom > cursor_y {
-                            cursor_y = bottom;
-                        }
+                        page_floats.push(float::ActiveFloat {
+                            page_x: fs.x.resolve(parity),
+                            page_y_start: shape_y,
+                            page_y_end: bottom,
+                            width: fs.size.width,
+                            source: float::FloatSource::Shape,
+                            wrap_text: float::WrapTextSide::Neither,
+                        });
+                        band_floor = band_floor.max(bottom);
                     } else {
                         page_floats.push(float::ActiveFloat {
                             page_x: fs.x.resolve(parity) - fs.dist_left,
@@ -236,21 +253,6 @@ pub fn stack_blocks(
                             wrap_text: fs.wrap_mode.wrap_text().into(),
                         });
                     }
-                }
-
-                // §20.4.2.18: the band was placed from `content_top`, which
-                // already includes `space_before`, and the cursor now sits at
-                // the band's bottom. `place_paragraph` applies `space_before`
-                // again inside the paragraph box, so without this the text is
-                // pushed a second `space_before` below the band it is supposed
-                // to sit directly beneath — contradicting the band comment
-                // above ("the paragraph starts below the whole band").
-                //
-                // Only when the band actually moved the cursor: a float with a
-                // negative `wp:posOffset` that resolves above the paragraph
-                // leaves the cursor alone and needs no correction.
-                if cursor_y > pre_band_cursor {
-                    cursor_y -= effective_style.space_before;
                 }
 
                 float::prune_floats(&mut page_floats, cursor_y);
@@ -454,7 +456,7 @@ pub fn stack_blocks(
 
     StackResult {
         commands,
-        height: cursor_y,
+        height: cursor_y.max(band_floor),
         overlay_bottom,
         lines: if splittable { cell_lines } else { Vec::new() },
     }
@@ -553,9 +555,14 @@ mod tests {
         }
     }
 
+    /// An empty paragraph as the builder hands one over: its mark's line,
+    /// `LINE` tall (`build::block`).
     fn para(style: ParagraphStyle, images: Vec<FloatingImage>) -> LayoutBlock {
         LayoutBlock::Paragraph {
-            fragments: vec![],
+            fragments: vec![crate::render::layout::fragment::Fragment::LineBreak {
+                line_height: Pt::new(LINE),
+                origin: crate::render::layout::fragment::LineBreakOrigin::ParagraphMark,
+            }],
             style,
             page_break_before: false,
             footnotes: vec![],
@@ -629,6 +636,27 @@ mod tests {
         let result = stack(&[para(ParagraphStyle::default(), vec![top_bottom(30.0)])]);
         assert_eq!(image_ys(&result), vec![0.0]);
         assert!((result.height.raw() - (30.0 + LINE)).abs() < 1e-4);
+    }
+
+    /// A band anchored below the paragraph's line leaves the line where it is,
+    /// and the stacked height reaches the band's foot — haddam's signature
+    /// cell (`test-files/cell-float-valign.docx`).
+    #[test]
+    fn a_band_below_the_line_leaves_the_line_above_it() {
+        let result = stack(&[para(
+            ParagraphStyle::default(),
+            vec![image(
+                20.0,
+                WrapMode::TopAndBottom,
+                FloatingImageY::RelativeToParagraph(Pt::new(30.0)),
+            )],
+        )]);
+        assert_eq!(image_ys(&result), vec![30.0]);
+        assert!(
+            (result.height.raw() - 50.0).abs() < 1e-4,
+            "the picture's foot, not a line below it, got {}",
+            result.height.raw()
+        );
     }
 
     /// Page-absolute floats are placed by their anchor, not by the band.

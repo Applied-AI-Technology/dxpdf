@@ -74,6 +74,10 @@ pub enum WrapTextSide {
     Right,
     /// Text flows on the larger of the two sides.
     Largest,
+    /// §20.4.2.18 `wrapTopAndBottom`: text on neither side. The float narrows
+    /// no line; a line that would meet it stands below it instead
+    /// ([`below_bands`]), and one wholly above it stays where it is.
+    Neither,
 }
 
 impl From<crate::model::WrapText> for WrapTextSide {
@@ -124,11 +128,38 @@ impl ActiveFloat {
                 let right_remaining = content_right - (self.page_x + self.width);
                 left_remaining < right_remaining
             }
-            WrapTextSide::BothSides => {
+            WrapTextSide::BothSides | WrapTextSide::Neither => {
                 let content_center = page_x + content_width * 0.5;
                 let float_center = self.page_x + self.width * 0.5;
                 float_center < content_center
             }
+        }
+    }
+}
+
+/// §20.4.2.18 `wrapTopAndBottom`: the y at which a line `line_height` tall,
+/// placed at `line_y`, meets none of `floats` that leave text on neither side
+/// — `line_y` itself unless the line would overlap one, else the bottom of the
+/// float it meets. Only the lines that would meet the picture move: Word keeps
+/// a cell's paragraph line above a picture anchored 25.95pt below it, and
+/// moves the line under one anchored at its top
+/// (`test-files/cell-float-valign.docx`).
+///
+/// Iterates, because the line moved below one such float can meet the next.
+pub fn below_bands(floats: &[ActiveFloat], line_y: Pt, line_height: Pt) -> Pt {
+    let mut y = line_y;
+    loop {
+        let meets = floats
+            .iter()
+            .filter(|f| f.wrap_text == WrapTextSide::Neither)
+            .filter(|f| y + line_height > f.page_y_start && y < f.page_y_end)
+            .map(|f| f.page_y_end)
+            .fold(None, |acc: Option<Pt>, end| {
+                Some(acc.map_or(end, |a| a.max(end)))
+            });
+        match meets {
+            Some(end) if end > y => y = end,
+            _ => return y,
         }
     }
 }
@@ -213,8 +244,13 @@ pub fn float_adjustments_with_height(
     let line_bottom = line_y + line_height;
 
     for float in floats {
-        // Check if any part of the line overlaps the float vertically.
-        if line_bottom <= float.page_y_start || line_y >= float.page_y_end {
+        // Check if any part of the line overlaps the float vertically. A
+        // float with text on neither side narrows nothing — the line moves
+        // below it instead (`below_bands`).
+        if float.wrap_text == WrapTextSide::Neither
+            || line_bottom <= float.page_y_start
+            || line_y >= float.page_y_end
+        {
             continue;
         }
 
