@@ -489,12 +489,15 @@ pub(super) fn resolve_paragraph_borders(
         bottom: pbdr.bottom.as_ref().and_then(convert),
         left: pbdr.left.as_ref().and_then(convert),
         right: pbdr.right.as_ref().and_then(convert),
+        between: pbdr.between.as_ref().and_then(convert),
+        ..ParagraphBorderStyle::default()
     };
 
     if style.top.is_some()
         || style.bottom.is_some()
         || style.left.is_some()
         || style.right.is_some()
+        || style.between.is_some()
     {
         Some(style)
     } else {

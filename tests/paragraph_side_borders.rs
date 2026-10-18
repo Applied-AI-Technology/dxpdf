@@ -4,7 +4,8 @@
 //! for Mac 16, PDF export, 2026-10-17).
 //!
 //! A side border stands its `w:space` and 1.35pt more off the text, its line
-//! outside that, and the top and bottom lines run over the corners.
+//! outside that, and the top and bottom lines run over the corners. A
+//! `w:between` line stands its space off the text on both sides.
 //!
 //! Every line is an exact 12pt one, so nothing here depends on a face. Word's
 //! numbers are quoted per case; they sit within 0.12pt of these, Word's own
@@ -166,4 +167,22 @@ fn the_inset_is_the_same_for_every_line_and_indent() {
         "HI's right",
     );
     assert!(near(edge(&p[2], 95.0, 125.0), LEFT_INNER), "HF");
+}
+
+/// `w:between` stands its 1pt of space off the text on both sides, after the
+/// space that collapsed between the two paragraphs. Word: the lines at
+/// 311.04–312.0 and 331.92–332.88 across the box.
+#[test]
+fn a_between_line_stands_off_both_paragraphs() {
+    let p = &pages()[0];
+    assert_line(
+        p,
+        (LEFT_INNER - 1.0, 311.0, RIGHT_INNER + 1.0, 312.0),
+        "S4 first between",
+    );
+    assert_line(
+        p,
+        (LEFT_INNER - 1.0, 332.0, RIGHT_INNER + 1.0, 333.0),
+        "S4 second between",
+    );
 }

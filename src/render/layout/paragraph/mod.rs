@@ -1749,6 +1749,7 @@ mod tests {
                 bottom: Some(border(1.0)),
                 left: Some(border(1.0)),
                 right: Some(border(1.0)),
+                ..Default::default()
             }),
             shading: Some(ResolvedShading::Flat(RgbColor::BLACK)),
             ..Default::default()

@@ -100,6 +100,7 @@ pub(super) fn emit_segment_borders_and_shading(
     let bottom_line = borders.and_then(|b| b.bottom.as_ref());
     let left_line = borders.and_then(|b| b.left.as_ref());
     let right_line = borders.and_then(|b| b.right.as_ref());
+    let between = borders.is_some_and(|b| b.joins_above) && top_line.is_some();
     let para_left = style.indent_left;
     let para_right = constraints.max_width - style.indent_right;
 
@@ -112,21 +113,29 @@ pub(super) fn emit_segment_borders_and_shading(
     let left_outer = left_inner - left_line.map_or(Pt::ZERO, |l| l.width);
     let right_outer = right_inner + right_line.map_or(Pt::ZERO, |l| l.width);
 
-    // The rule above the text stands right under the space before.
-    let rule_top = style.space_before;
+    // The rule above the text: a top border stands right under the space
+    // before, a box's `between` line its own space below it
+    // (`ParagraphStyle::top_border_room`).
+    let rule_top = |line: &super::types::BorderLine| {
+        style.space_before + if between { line.space } else { Pt::ZERO }
+    };
     // Where the sides and shading begin when no rule closes the box above:
     // right under the space before.
     let reach_top = style.space_before;
     let bottom_rule_top = |line: &super::types::BorderLine| content_bottom + line.space;
 
-    // The sides' extent.
-    let mut side_runs: Vec<(Pt, Pt)> = Vec::with_capacity(1);
+    // The sides' extent, in up to two runs: a `between` line breaks them.
+    let mut side_runs: Vec<(Pt, Pt)> = Vec::with_capacity(2);
     let side_bottom = match bottom_line {
         Some(line) if draw_bottom => bottom_rule_top(line),
         _ => content_bottom,
     };
     match top_line {
-        Some(line) if draw_top => side_runs.push((rule_top + line.width, side_bottom)),
+        Some(line) if draw_top && between => {
+            side_runs.push((reach_top, rule_top(line)));
+            side_runs.push((rule_top(line) + line.width, side_bottom));
+        }
+        Some(line) if draw_top => side_runs.push((rule_top(line) + line.width, side_bottom)),
         _ if draw_top => side_runs.push((reach_top, side_bottom)),
         _ => side_runs.push((Pt::ZERO, side_bottom)),
     }
@@ -150,7 +159,7 @@ pub(super) fn emit_segment_borders_and_shading(
             (Some(_), _, _) => (para_left - SIDE_INSET, para_right + SIDE_INSET),
         };
         let fill_top = match top_line {
-            Some(line) if draw_top => rule_top + line.width * 0.5,
+            Some(line) if draw_top && !between => rule_top(line) + line.width * 0.5,
             _ if draw_top => reach_top,
             _ => Pt::ZERO,
         };
@@ -188,7 +197,7 @@ pub(super) fn emit_segment_borders_and_shading(
         });
     };
     if let Some(line) = top_line.filter(|_| draw_top) {
-        horizontal(commands, line, rule_top);
+        horizontal(commands, line, rule_top(line));
     }
     if let Some(line) = bottom_line.filter(|_| draw_bottom) {
         horizontal(commands, line, bottom_rule_top(line));

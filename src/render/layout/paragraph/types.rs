@@ -122,12 +122,25 @@ pub struct ParagraphStyle {
 }
 
 /// Resolved paragraph border style for rendering.
-#[derive(Clone, Debug, PartialEq)]
+///
+/// As converted it is the paragraph's own `w:pBdr`; grouping
+/// (`build::group_paragraph_borders`) then makes it this paragraph's part of
+/// the box it shares with its neighbours — dropping the `top` of one that
+/// joins the paragraph above (or setting the box's `between` there) and the
+/// `bottom` of one the paragraph below joins.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ParagraphBorderStyle {
     pub top: Option<BorderLine>,
     pub bottom: Option<BorderLine>,
     pub left: Option<BorderLine>,
     pub right: Option<BorderLine>,
+    /// §17.3.1.24 `w:between`: the line drawn between two paragraphs of one
+    /// box, as declared.
+    pub between: Option<BorderLine>,
+    /// Whether this paragraph joins the box of the paragraph above, so that
+    /// its `top`, if any, is the box's `between` line, which stands its
+    /// `space` off the text on both sides (`ParagraphStyle::top_border_room`).
+    pub joins_above: bool,
 }
 
 /// A single border line for rendering.
@@ -176,12 +189,17 @@ pub struct DropCapInfo {
 }
 
 impl ParagraphStyle {
-    /// The room the top border takes above the first line ([`BorderLine::room`]).
+    /// The room the top border takes above the first line ([`BorderLine::room`]),
+    /// or a box's `between` line, which stands its space off the text above
+    /// it as well as below: Word sets the paragraph after a 1pt `between` with
+    /// 1pt of space 3pt lower than one in the same box without it
+    /// (`test-files/paragraph-side-borders.docx` S4).
     pub(crate) fn top_border_room(&self) -> Pt {
-        self.borders
-            .as_ref()
-            .and_then(|b| b.top.as_ref())
-            .map_or(Pt::ZERO, BorderLine::room)
+        self.borders.as_ref().map_or(Pt::ZERO, |b| match &b.top {
+            Some(line) if b.joins_above => line.room() + line.space,
+            Some(line) => line.room(),
+            None => Pt::ZERO,
+        })
     }
 
     /// The room the bottom border takes below the last line.

@@ -2,7 +2,7 @@
 
 use super::super::draw_command::{LayoutedPage, ResolvedEffect, ResolvedFill, ResolvedStroke};
 use super::super::fragment::Fragment;
-use super::super::paragraph::{ParagraphBorderStyle, ParagraphStyle};
+use super::super::paragraph::ParagraphStyle;
 use super::super::table::TableRowInput;
 use crate::model::dimension::{Dimension, SixtieThousandthDeg};
 use crate::model::{StyleId, WrapText};
@@ -446,7 +446,6 @@ pub struct ContinuationState {
     pub prev_space_after: Pt,
     pub prev_style_id: Option<StyleId>,
     pub prev_contextual: bool,
-    pub prev_borders: Option<ParagraphBorderStyle>,
     /// §17.4.38: for adjacent-table border collapse across the break.
     pub prev_table_style_id: Option<StyleId>,
     /// §17.3.3.1: an inline page break at the end of the preceding section is

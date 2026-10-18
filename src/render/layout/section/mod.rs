@@ -749,6 +749,7 @@ mod tests {
                 bottom: Some(border_line()),
                 left: Some(border_line()),
                 right: Some(border_line()),
+                ..Default::default()
             });
         }
         let pages = layout_section(
@@ -3545,73 +3546,6 @@ mod tests {
             "centred float: left gap {} must equal right gap {}",
             left - content_left,
             content_right - right,
-        );
-    }
-
-    // ── §17.3.1.24 paragraph border grouping tests ─────────────────────
-
-    #[test]
-    fn identical_borders_suppress_second_top() {
-        use crate::render::layout::paragraph::{BorderLine, ParagraphBorderStyle};
-        let border = Some(ParagraphBorderStyle {
-            top: Some(BorderLine {
-                width: Pt::new(0.5),
-                color: RgbColor::BLACK,
-                space: Pt::new(1.0),
-            }),
-            bottom: None,
-            left: None,
-            right: None,
-        });
-        let style1 = ParagraphStyle {
-            borders: border.clone(),
-            ..Default::default()
-        };
-        let style2 = ParagraphStyle {
-            borders: border,
-            ..Default::default()
-        };
-
-        let blocks = vec![
-            LayoutBlock::Paragraph {
-                fragments: vec![text_frag("para1", 30.0, 14.0)],
-                style: style1,
-                page_break_before: false,
-                footnotes: vec![],
-                floating_images: vec![],
-                floating_shapes: vec![],
-            },
-            LayoutBlock::Paragraph {
-                fragments: vec![text_frag("para2", 30.0, 14.0)],
-                style: style2,
-                page_break_before: false,
-                footnotes: vec![],
-                floating_images: vec![],
-                floating_shapes: vec![],
-            },
-        ];
-        let pages = layout_section(
-            &blocks,
-            &small_config(),
-            None,
-            Pt::ZERO,
-            Pt::new(14.0),
-            None,
-        );
-
-        // Count Line draw commands (border lines).
-        // Only the first paragraph should draw its top border; the second's
-        // top border is suppressed by §17.3.1.24 grouping.
-        let line_cmds: Vec<_> = pages[0]
-            .commands
-            .iter()
-            .filter(|c| matches!(c, DrawCommand::Line { .. }))
-            .collect();
-        assert_eq!(
-            line_cmds.len(),
-            1,
-            "only one top border line (grouped): got {}",
-            line_cmds.len()
         );
     }
 

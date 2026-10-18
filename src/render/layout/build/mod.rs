@@ -142,8 +142,10 @@ pub fn build_section_blocks(
 
 /// §17.3.1.24: paragraphs in a row with the same border settings are one
 /// bordered group — the top border above the first of them, the bottom one
-/// below the last, and neither between. Each member keeps the sides; the top
-/// and bottom are taken from every member but the first and the last.
+/// below the last, and between them the group's `w:between` line if it has
+/// one, standing above each member after the first (`joins_above`). Each
+/// member keeps the sides; the top and bottom are taken from every member but
+/// the first and the last.
 ///
 /// The settings compared are the borders as the cascade left them, before
 /// any member lost an edge here. A table or any other block between two
@@ -167,7 +169,8 @@ pub(super) fn group_paragraph_borders(blocks: &mut [LayoutBlock]) {
         if let LayoutBlock::Paragraph { style, .. } = &mut blocks[i] {
             if let Some(borders) = style.borders.as_mut() {
                 if joins_previous {
-                    borders.top = None;
+                    borders.top = borders.between;
+                    borders.joins_above = true;
                 }
                 if joins_next {
                     borders.bottom = None;
@@ -537,6 +540,7 @@ mod tests {
                     bottom: Some(line(width)),
                     left: None,
                     right: None,
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
