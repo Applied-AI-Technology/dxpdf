@@ -425,22 +425,25 @@ struct RangeMeasure {
 
 /// The [`LineMetrics`] of the line `fragments[start..end]`.
 ///
-/// Spaces that end the line are left out: they hang past its end, and Word
-/// does not stand the line taller for them — it ends a 9pt line with an
-/// unformatted 11pt space run and keeps the line 9pt tall
-/// (ShellfishTransactionReport's `{ orderPaidDate}`). A space before a break
-/// ends the line as much as one at a wrap. A line of nothing but spaces keeps
-/// them, having nothing else to stand on.
+/// Spaces and tabs are left out wherever they stand: Word does not stand a
+/// line taller for white space in a larger face — not a 20pt space between
+/// two 10pt words, at the start of the line or at its end, nor an
+/// unformatted 11pt space or tab in 10pt text (`test-files/space-run-height.docx`;
+/// holdenma's delinquency notice, ShellfishTransactionReport's
+/// `{ orderPaidDate}`). A no-break space is not white space to it and counts.
+/// A line of nothing but white space keeps it, having nothing else to stand
+/// on.
 fn range_metrics(fragments: &[Fragment], start: usize, end: usize) -> LineMetrics {
     let line = &fragments[start..end];
-    let blank = |f: &Fragment| matches!(f, Fragment::Text { text, .. } if text.trim().is_empty());
-    let content_end = line
-        .iter()
-        .rposition(|f| !blank(f) && !f.is_line_break())
-        .map_or(line.len(), |last| last + 1);
+    let blank = |f: &Fragment| match f {
+        Fragment::Text { text, .. } => text.chars().all(|c| c == ' '),
+        Fragment::Tab { .. } => true,
+        _ => false,
+    };
+    let has_content = line.iter().any(|f| !blank(f) && !f.is_line_break());
     let mut metrics = LineMetrics::default();
-    for (i, frag) in line.iter().enumerate() {
-        if i >= content_end && blank(frag) {
+    for frag in line {
+        if has_content && blank(frag) {
             continue;
         }
         metrics.add(frag);
@@ -603,12 +606,13 @@ mod tests {
         f
     }
 
-    /// A space that ends a line hangs past it and adds nothing to its height:
-    /// Word ends a 9pt line with an unformatted 11pt space run and keeps the
-    /// line 9pt tall (ShellfishTransactionReport, `{ orderPaidDate}`). The
-    /// same space inside a line counts.
+    /// A space adds nothing to its line's height, at the line's end or inside
+    /// it: Word ends a 9pt line with an unformatted 11pt space run and keeps
+    /// the line 9pt tall (ShellfishTransactionReport, `{ orderPaidDate}`), and
+    /// sets a 20pt space between two 10pt words on a 10pt line
+    /// (`test-files/space-run-height.docx`).
     #[test]
-    fn a_line_end_space_adds_nothing_to_the_line() {
+    fn a_space_adds_nothing_to_the_line() {
         let frags = vec![
             frag("word", 30.0, BreakAfter::Prohibited),
             tall(" ", 3.0, BreakAfter::Opportunity),
@@ -630,7 +634,7 @@ mod tests {
         ];
         let lines = fit_lines(&inside, Pt::new(50.0));
         assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].height.raw(), 17.0, "inside the line it counts");
+        assert_eq!(lines[0].height.raw(), 14.0, "nor inside it");
     }
 
     #[test]

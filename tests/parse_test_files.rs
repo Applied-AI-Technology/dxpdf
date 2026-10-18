@@ -474,6 +474,7 @@ const ALL_FILES: &[&str] = &[
     "table-normal-none-14.docx",
     "paragraph-side-borders.docx",
     "inline-effect-extent.docx",
+    "space-run-height.docx",
 ];
 
 #[test]
