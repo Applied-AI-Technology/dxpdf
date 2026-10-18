@@ -13,15 +13,15 @@
 //! [`super::FontRegistry::resolve`].
 //!
 //! "Metric-compatible" means *same advance widths*, so line breaks and page
-//! counts match Word even though glyph shapes differ — why Carlito/Caladea
-//! are used here rather than a generic sans/serif. Substitution is also a
+//! counts match Word even though glyph shapes differ — why Carlito and
+//! Liberation are used here rather than a generic sans/serif. Substitution is also a
 //! *host-dependent* step: the same DOCX can paginate differently on macOS and
 //! Linux depending on what is installed. When cross-platform output differs,
 //! check this table first.
 //!
 //! [`LOOKALIKE_SUBSTITUTIONS`] is the weaker second tier: free faces in the
 //! same *style* as a proprietary one that has no metric-compatible clone —
-//! the script and handwriting faces Office ships. They do not share advance
+//! Cambria, and the script and handwriting faces Office ships. They do not share advance
 //! widths, so a run set in one wraps differently; they exist so a word set in
 //! Edwardian Script still reads as a script rather than as the host's default
 //! sans. Kept apart from the metric table so that table's promise holds for
@@ -31,7 +31,6 @@
 /// in order when `match_family_style` for the requested family fails.
 pub(crate) const FONT_SUBSTITUTIONS: &[(&str, &[&str])] = &[
     ("Calibri", &["Carlito", "Liberation Sans", "Noto Sans"]),
-    ("Cambria", &["Caladea", "Liberation Serif", "Noto Serif"]),
     ("Arial", &["Liberation Sans", "Noto Sans", "Helvetica"]),
     (
         "Times New Roman",
@@ -96,20 +95,36 @@ pub(crate) fn strip_weight_suffix(name: &str) -> Option<&str> {
 /// answer. Each was chosen by comparing glyph shapes and widths against the
 /// original on the text the documents set in it:
 ///
+/// - Cambria → Caladea: shaped like Cambria but not cut to the widths of the
+///   Cambria Office ships (6.90): 57 of the 95 printable ASCII characters
+///   differ, the digits by up to 35% (Cambria's are tabular), the capitals by
+///   up to 12%. Liberation Serif and Noto Serif follow it, nearer than the
+///   host default.
 /// - Edwardian Script ITC → Imperial Script: the same copperplate hand and
 ///   stroke weight, glyphs on average 12% off in width.
 /// - Bradley Hand ITC → Indie Flower: no free face shares its widths (the
 ///   nearest are 12% off per glyph); Indie Flower is the closest in feel, a
 ///   thin, open, informal hand.
 ///
-/// Both are SIL Open Font License faces from Google Fonts. Widths cannot be
+/// All three are SIL Open Font License faces. Widths cannot be
 /// borrowed, but the line a face sets can: each entry carries the original's
 /// `hhea` metrics, and a look-alike is measured with those
 /// ([`TypefaceEntry::vertical`](super::TypefaceEntry::vertical)), so a line
 /// holding one stands as tall as Word makes it and nothing below it moves.
-/// Imperial Script's own line is 3% taller than Edwardian's and Indie
-/// Flower's 17% taller than Bradley Hand's.
+/// Caladea's own line is 2% shorter than Cambria's, Imperial Script's 3%
+/// taller than Edwardian's and Indie Flower's 17% taller than Bradley Hand's.
 pub(crate) const LOOKALIKE_SUBSTITUTIONS: &[Lookalike] = &[
+    Lookalike {
+        family: "Cambria",
+        substitutes: &["Caladea", "Liberation Serif", "Noto Serif"],
+        // hhea 1946/455/0 of 2048 units in all four faces, Word for Mac 16's
+        // bundled copy (6.90). Caladea's own is 900/250/0 of 1000.
+        vertical: VerticalMetrics {
+            ascent: 1946.0 / 2048.0,
+            descent: 455.0 / 2048.0,
+            line_gap: 0.0,
+        },
+    },
     Lookalike {
         family: "Edwardian Script ITC",
         substitutes: &["Imperial Script"],
@@ -287,5 +302,21 @@ mod tests {
             "matched without regard to case"
         );
         assert!(lookalikes_for("Calibri").is_none());
+    }
+
+    /// Caladea is Cambria's look-alike, not its metric clone, and Cambria
+    /// Math — a family of its own — is neither.
+    #[test]
+    fn cambria_has_only_a_look_alike() {
+        assert!(substitutes_for("Cambria").is_none());
+        assert_eq!(
+            lookalikes_for("Cambria").map(|e| e.substitutes[0]),
+            Some("Caladea")
+        );
+        assert_eq!(
+            lookalikes_for("Cambria Bold").map(|e| e.family),
+            Some("Cambria")
+        );
+        assert!(lookalikes_for("Cambria Math").is_none());
     }
 }

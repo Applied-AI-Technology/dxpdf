@@ -617,6 +617,31 @@ fn a_script_face_takes_its_look_alike() {
     );
 }
 
+/// Cambria's free stand-in is a look-alike too: Caladea is not cut to the
+/// Office face's widths, so it is reached as a look-alike — measured on
+/// Cambria's line — rather than as a clone.
+#[test]
+fn cambria_takes_caladea_as_a_look_alike() {
+    // A manager with no fonts of its own, so the answer does not depend on
+    // whether this host has Office's Cambria.
+    let (_, typeface) = load(&FontMgr::new(), "DxSans-Regular.ttf").remove(0);
+    let faces: Vec<_> = ["Caladea", "Liberation Serif"]
+        .iter()
+        .map(|family| ((*family).to_owned(), typeface.clone()))
+        .collect();
+    let catalog = FaceCatalog::from_faces(FontMgr::empty(), &faces);
+    assert_eq!(
+        step_for(&catalog, "Cambria"),
+        (
+            "Caladea".to_owned(),
+            ResolutionStep::Lookalike {
+                via: "Cambria",
+                substitute: "Caladea"
+            }
+        )
+    );
+}
+
 /// The look-alike is a last resort: a host that has the face itself uses it.
 #[test]
 fn the_face_itself_outranks_its_look_alike() {

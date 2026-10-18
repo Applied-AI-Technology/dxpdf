@@ -1,7 +1,7 @@
 # A production-like host for dxpdf: Debian trixie, native arm64 on Apple
-# silicon and Graviton alike, with only the free metric-compatible fonts a
-# server image gets — Carlito for Calibri, Caladea for Cambria, Liberation for
-# Arial, Times New Roman and Courier New — and none of Office's. A document
+# silicon and Graviton alike, with only the free stand-ins a server image
+# gets — Carlito for Calibri, Liberation for Arial, Times New Roman and Courier
+# New, and Caladea, a look-alike, for Cambria — and none of Office's. A document
 # rendered here takes the substitution path (`render::fonts::substitutes`) and
 # the font backend (FreeType) a deployment does, which a macOS host with Office
 # installed takes for neither. Build dependencies follow
