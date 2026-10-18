@@ -472,6 +472,7 @@ const ALL_FILES: &[&str] = &[
     "table-normal-mar.docx",
     "table-normal-ind.docx",
     "table-normal-none-14.docx",
+    "paragraph-side-borders.docx",
 ];
 
 #[test]
