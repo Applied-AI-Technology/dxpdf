@@ -14,5 +14,9 @@ case "$(uname -s)" in
   *) echo "unsupported host: $(uname -s)" >&2; exit 1 ;;
 esac
 target_dir="${CARGO_TARGET_DIR:-$root/target}"
+# Replace the file rather than write over it: macOS caches a loaded library's
+# code signature by inode, and kills the next process that loads new bytes
+# under the old one.
+rm -f "$root/node/dxpdf.node"
 cp "$target_dir/$profile/$lib" "$root/node/dxpdf.node"
 echo "built $root/node/dxpdf.node"
