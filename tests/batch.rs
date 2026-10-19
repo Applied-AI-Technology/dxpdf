@@ -259,3 +259,40 @@ fn an_embedded_face_every_document_carries_is_registered_once() {
     assert_eq!(page_sizes(&batch).len(), 2 * page_sizes(&single).len());
     assert_eq!(embedded_faces(&batch), embedded_faces(&single));
 }
+
+/// Image XObjects in a PDF.
+fn embedded_images(pdf: &[u8]) -> usize {
+    let doc = lopdf::Document::load_mem(pdf).unwrap();
+    doc.objects
+        .values()
+        .filter_map(|o| o.as_stream().ok())
+        .filter(|s| {
+            s.dict
+                .get(b"Subtype")
+                .ok()
+                .and_then(|t| t.as_name().ok())
+                .is_some_and(|n| n == b"Image")
+        })
+        .count()
+}
+
+/// A picture every document carries — a town's logo on every letter — is
+/// embedded once. Each document holds its own copy of the bytes, so this is
+/// identity by content, not by buffer.
+#[test]
+fn a_picture_every_document_carries_is_embedded_once() {
+    let pictures = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test-files/picture-transparency.docx"
+    ))
+    .unwrap();
+
+    let single = dxpdf::convert(&pictures).unwrap();
+    let batch = dxpdf::convert_batch(&[&pictures, &pictures, &pictures]).unwrap();
+
+    assert!(
+        embedded_images(&single) >= 1,
+        "the control embeds its pictures"
+    );
+    assert_eq!(embedded_images(&batch), embedded_images(&single));
+}

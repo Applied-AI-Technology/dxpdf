@@ -39,13 +39,55 @@ const POINTS_PER_INCH: f32 = 72.0;
 /// are spec-identical hash alike. `None` marks an uncropped placement.
 type CropKey = Option<(i32, i32, i32, i32)>;
 
-/// Decoded-image cache, keyed by media data-pointer identity, the downsample
-/// target size, **and** the crop baked into the cached bitmap. Two placements
+/// Decoded-image cache, keyed by media identity ([`MediaIdentity`]), the
+/// downsample target size, **and** the crop baked into the cached bitmap. Two placements
 /// of the same media get distinct entries when they draw at different sizes or
 /// under different `srcRect` crops — each caches its own correctly-scaled,
 /// pre-cropped bitmap, so neither reuses the other's resolution or crop.
 type ImageCacheKey = (*const [u8], i32, i32, CropKey);
 type ImageCache = HashMap<ImageCacheKey, skia_safe::Image>;
+
+/// Media identity by content: each media buffer maps to the first buffer seen
+/// with the same bytes, and that buffer's address is what [`ImageCacheKey`]
+/// holds.
+///
+/// Within one document every placement of a picture shares one buffer, so its
+/// address was identity enough. A batch renders many documents, each with its
+/// own copy of the same logo, and keying on the buffer embedded that logo once
+/// per document. Each distinct buffer is hashed once per render and a hash
+/// match is confirmed byte for byte, so two different pictures never share an
+/// entry. The canonical buffers are held here, which keeps every address in
+/// the map alive, and so unique, for the whole render.
+#[derive(Default)]
+struct MediaIdentity {
+    canonical: FxHashMap<*const [u8], *const [u8]>,
+    by_content: FxHashMap<u64, Vec<std::sync::Arc<[u8]>>>,
+}
+
+impl MediaIdentity {
+    fn of(&mut self, data: &std::sync::Arc<[u8]>) -> *const [u8] {
+        let ptr = std::sync::Arc::as_ptr(data);
+        if let Some(&canonical) = self.canonical.get(&ptr) {
+            return canonical;
+        }
+        let hash = {
+            use std::hash::{Hash, Hasher};
+            let mut h = rustc_hash::FxHasher::default();
+            data.hash(&mut h);
+            h.finish()
+        };
+        let same = self.by_content.entry(hash).or_default();
+        let canonical = match same.iter().find(|seen| ***seen == **data) {
+            Some(seen) => std::sync::Arc::as_ptr(seen),
+            None => {
+                same.push(data.clone());
+                ptr
+            }
+        };
+        self.canonical.insert(ptr, canonical);
+        canonical
+    }
+}
 
 /// Downsample target dimensions (in pixels) for a display rect at `image_dpi`.
 /// Shared by the image cache key and the downsample passes so both agree on the
@@ -192,6 +234,8 @@ struct PaintState {
     /// Decoded Skia images across pages — avoids re-decoding the same bytes on
     /// every page (e.g. a logo repeated in headers/footers). See [`ImageCache`].
     image_cache: ImageCache,
+    /// Which media buffers hold the same picture, for [`ImageCache`]'s key.
+    media: MediaIdentity,
     /// Emoji rasterizer — clusters that recur across pages (footer 📞 etc.) are
     /// rasterized once and shared.
     emoji_rasterizer: EmojiRasterizer,
@@ -221,6 +265,7 @@ impl PaintState {
         Self {
             font_cache: fonts::FontCache::new(),
             image_cache: HashMap::new(),
+            media: MediaIdentity::default(),
             emoji_rasterizer: EmojiRasterizer::default(),
             blob_cache: FxHashMap::default(),
             shaper: crate::render::shape::Shaper::new().ok(),
@@ -343,6 +388,7 @@ fn render_page(
     let PaintState {
         font_cache,
         image_cache,
+        media,
         emoji_rasterizer,
         blob_cache,
         shaper,
@@ -587,7 +633,7 @@ fn render_page(
                     // `srcRect` each cache their own bitmap.
                     let (target_w, target_h) = downsample_target(draw_rect, image_dpi);
                     let key = (
-                        std::sync::Arc::as_ptr(&image_data.data),
+                        media.of(&image_data.data),
                         target_w,
                         target_h,
                         crop.as_ref().map(quantize_crop),
