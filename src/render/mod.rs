@@ -26,7 +26,7 @@ pub mod spacing;
 #[cfg(feature = "subset-fonts")]
 pub mod subset;
 
-use crate::model::Document;
+use crate::model::{Document, EmbeddedFont};
 
 /// Default target resolution (pixels per inch) for embedded raster images.
 ///
@@ -387,23 +387,49 @@ pub fn render_with_font_mgr(
     font_mgr: &skia_safe::FontMgr,
     options: &RenderOptions,
 ) -> Result<Vec<u8>, error::RenderError> {
+    render_batch_with_font_mgr(vec![doc], font_mgr, options)
+}
+
+/// Render several documents into one PDF, in order — see
+/// [`crate::convert_batch_with_options`].
+pub fn render_batch(
+    docs: Vec<Document>,
+    options: &RenderOptions,
+) -> Result<Vec<u8>, error::RenderError> {
+    let font_mgr = skia_safe::FontMgr::new();
+    render_batch_with_font_mgr(docs, &font_mgr, options)
+}
+
+/// [`render_batch`] with a pre-configured FontMgr.
+///
+/// The documents share one [`fonts::FontRegistry`], built from the union of
+/// their families and embedded fonts, and so one subset pass and one PDF: the
+/// registry is per *render*, and a batch is one render with one output, so
+/// nothing subsetted here outlives it. Each document is still resolved and
+/// laid out on its own, which is what keeps its sections, page numbering and
+/// `NUMPAGES` its own.
+pub fn render_batch_with_font_mgr(
+    docs: Vec<Document>,
+    font_mgr: &skia_safe::FontMgr,
+    options: &RenderOptions,
+) -> Result<Vec<u8>, error::RenderError> {
     use std::time::Instant;
 
     let t = Instant::now();
-    let resolved = resolve::resolve(doc);
+    let resolved: Vec<ResolvedDocument> = docs.into_iter().map(resolve::resolve).collect();
     log::debug!("  resolve:  {:?}", t.elapsed());
 
     let t = Instant::now();
+    let (embedded, families) = shared_fonts(&resolved);
     #[allow(unused_mut)] // mut required only when subset-fonts is enabled
-    let mut registry = fonts::FontRegistry::build(
-        font_mgr.clone(),
-        &resolved.embedded_fonts,
-        &resolved.font_families,
-    )?;
+    let mut registry = fonts::FontRegistry::build(font_mgr.clone(), &embedded, &families)?;
     log::debug!("  registry: {:?}", t.elapsed());
 
     let t = Instant::now();
-    let pages = layout_document(&resolved, &registry);
+    let pages: Vec<LayoutedPage> = resolved
+        .iter()
+        .flat_map(|doc| layout_document(doc, &registry))
+        .collect();
     log::debug!("  layout:   {:?} ({} pages)", t.elapsed(), pages.len());
 
     #[cfg(feature = "subset-fonts")]
@@ -419,6 +445,34 @@ pub fn render_with_font_mgr(
     let pdf = painter::render_to_pdf(&pages, &registry, options);
     log::debug!("  paint:    {:?}", t.elapsed());
     pdf
+}
+
+/// The embedded fonts and families a batch's registry is built from: the
+/// first document's exactly as it declares them, then whatever a later one
+/// adds. Documents filled from one template each carry the same embedded
+/// fonts; the catalogue would resolve identical copies to one face anyway, so
+/// keeping them would change no output and cost only memory and registration
+/// time — once per document, which is what a batch exists to avoid.
+fn shared_fonts(docs: &[ResolvedDocument]) -> (Vec<EmbeddedFont>, Vec<String>) {
+    let (first, rest) = docs.split_first().expect("a batch has a document");
+    let mut embedded = first.embedded_fonts.clone();
+    let mut families = first.font_families.clone();
+    for doc in rest {
+        for font in &doc.embedded_fonts {
+            let known = embedded.iter().any(|e| {
+                e.family == font.family && e.variant == font.variant && e.data == font.data
+            });
+            if !known {
+                embedded.push(font.clone());
+            }
+        }
+        for family in &doc.font_families {
+            if !families.contains(family) {
+                families.push(family.clone());
+            }
+        }
+    }
+    (embedded, families)
 }
 
 /// Resolve and lay out a document without painting to PDF.
@@ -843,6 +897,55 @@ fn measure_footer_extent(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture(name: &str) -> ResolvedDocument {
+        let path = format!("{}/test-files/{name}", env!("CARGO_MANIFEST_DIR"));
+        resolve::resolve(crate::docx::parse(&std::fs::read(path).unwrap()).unwrap())
+    }
+
+    fn sample1() -> ResolvedDocument {
+        fixture("sample-docx-files-sample1.docx")
+    }
+
+    /// A batch registers each embedded font once, however many of its
+    /// documents carry a copy — and the first document's list is kept as it
+    /// is, which is what makes a batch of one the single-document render.
+    #[test]
+    fn a_batch_registers_each_embedded_font_once() {
+        let one = sample1();
+        assert!(!one.embedded_fonts.is_empty(), "the fixture embeds Ubuntu");
+
+        let (embedded, families) = shared_fonts(&[sample1(), sample1(), sample1()]);
+
+        assert_eq!(embedded.len(), one.embedded_fonts.len());
+        // Set comparison: a document's families come out of a hash set, so
+        // two parses of one file list them in different orders.
+        let set = |v: &[String]| v.iter().cloned().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(set(&families), set(&one.font_families));
+    }
+
+    /// Documents that differ contribute every family any of them asks for,
+    /// each once.
+    #[test]
+    fn a_batch_asks_for_every_family_its_documents_use() {
+        let docs = [sample1(), fixture("font_scaling.docx")];
+        let only_second: Vec<&String> = docs[1]
+            .font_families
+            .iter()
+            .filter(|f| !docs[0].font_families.contains(f))
+            .collect();
+        assert!(!only_second.is_empty(), "the fixtures must differ");
+
+        let (_, families) = shared_fonts(&docs);
+
+        for family in docs.iter().flat_map(|d| &d.font_families) {
+            assert_eq!(
+                families.iter().filter(|f| *f == family).count(),
+                1,
+                "{family}"
+            );
+        }
+    }
     use crate::model::dimension::{Dimension, Twips};
     use crate::model::*;
     use std::collections::HashMap;

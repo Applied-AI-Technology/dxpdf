@@ -32,6 +32,53 @@ pub fn convert_with_options(docx_bytes: &[u8], options: &RenderOptions) -> Resul
     Ok(pdf_bytes)
 }
 
+/// Convert several DOCX documents into one PDF, in order, using default
+/// [`RenderOptions`].
+pub fn convert_batch<D: AsRef<[u8]>>(documents: &[D]) -> Result<Vec<u8>, Error> {
+    convert_batch_with_options(documents, &RenderOptions::default())
+}
+
+/// Convert several DOCX documents into one PDF, in order.
+///
+/// Each document is laid out as it would be alone — its own sections, page
+/// numbers and `NUMPAGES` — and its pages follow the previous document's. What
+/// the documents share is the render: one font registry and one PDF, so a face
+/// several of them use is embedded once rather than once per document, which
+/// is what merging single-document PDFs would cost. A batch of one is exactly
+/// [`convert_with_options`].
+///
+/// A document that does not parse fails the batch with [`Error::Document`],
+/// naming its index; nothing is rendered until every document has parsed.
+pub fn convert_batch_with_options<D: AsRef<[u8]>>(
+    documents: &[D],
+    options: &RenderOptions,
+) -> Result<Vec<u8>, Error> {
+    use std::time::Instant;
+
+    if documents.is_empty() {
+        return Err(Error::EmptyBatch);
+    }
+    let t0 = Instant::now();
+    let parsed = documents
+        .iter()
+        .enumerate()
+        .map(|(index, bytes)| {
+            crate::docx::parse(bytes.as_ref()).map_err(|e| Error::Document {
+                index,
+                source: Box::new(e.into()),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    log::debug!("Parse:  {:?} ({} documents)", t0.elapsed(), parsed.len());
+
+    let t1 = Instant::now();
+    let pdf_bytes = crate::render::render_batch(parsed, options)?;
+    log::debug!("Render: {:?}", t1.elapsed());
+
+    log::debug!("Total:  {:?}", t0.elapsed());
+    Ok(pdf_bytes)
+}
+
 // --- Python bindings (enabled with `python` feature) ---
 
 #[cfg(feature = "python")]
