@@ -9,7 +9,10 @@ use crate::model::{Block, Document, FontSet, Inline};
 pub fn collect_font_families(doc: &Document) -> Vec<String> {
     let mut families = HashSet::new();
 
-    // Theme fonts
+    // Theme fonts. Not the per-script `a:font` entries (§20.1.4.1.16): layout
+    // never requests one, and the list exists only to preload the registry, so
+    // each would be a resolution no run uses — and on a host with none of them,
+    // a miss down the whole chain, forty times over for Office 2013's theme.
     if let Some(ref theme) = doc.theme {
         add_nonempty(&mut families, &theme.major_font.latin);
         add_nonempty(&mut families, &theme.minor_font.latin);
@@ -17,12 +20,6 @@ pub fn collect_font_families(doc: &Document) -> Vec<String> {
         add_nonempty(&mut families, &theme.minor_font.east_asian);
         add_nonempty(&mut families, &theme.major_font.complex_script);
         add_nonempty(&mut families, &theme.minor_font.complex_script);
-        for sf in &theme.major_font.script_fonts {
-            add_nonempty(&mut families, &sf.typeface);
-        }
-        for sf in &theme.minor_font.script_fonts {
-            add_nonempty(&mut families, &sf.typeface);
-        }
     }
 
     // Style sheet defaults
@@ -321,6 +318,31 @@ mod tests {
         let families = collect_font_families(&doc);
         assert!(families.contains(&"Calibri Light".to_string()));
         assert!(families.contains(&"Calibri".to_string()));
+    }
+
+    /// `a:font` per-script entries (§20.1.4.1.16) name a face for every script
+    /// Office knows — Office 2013's theme lists about forty — and nothing in
+    /// layout ever requests one, so preloading them resolves faces no run can
+    /// use. On a server that has none of them each is a miss down the whole
+    /// resolution chain: 140 ms of a 260 ms render of a one-page letter.
+    #[test]
+    fn leaves_out_theme_per_script_fonts() {
+        let mut doc = empty_doc();
+        doc.theme = Some(Theme {
+            minor_font: ThemeFontScheme {
+                latin: "Calibri".into(),
+                script_fonts: vec![ThemeScriptFont {
+                    script: ScriptTag::Jpan,
+                    typeface: "游明朝".into(),
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        let families = collect_font_families(&doc);
+        assert!(families.contains(&"Calibri".to_string()));
+        assert!(!families.contains(&"游明朝".to_string()));
     }
 
     #[test]
