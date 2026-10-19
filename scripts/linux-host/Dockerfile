@@ -13,6 +13,8 @@
 # Font License; each is pinned to one google/fonts commit and checked against
 # its digest, and ships with its licence as the OFL requires.
 #
+# Node is here for the binding's tests (`--features node`, `node/`).
+#
 # Use `scripts/linux-host/run.sh`, which builds this image and mounts the
 # checkout read-only.
 FROM rust:1.95-trixie
@@ -20,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential clang-19 libclang-19-dev ninja-build python3 git pkg-config \
       libfontconfig1-dev libfreetype-dev fontconfig \
       fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core \
+      nodejs \
     && rm -rf /var/lib/apt/lists/*
 ARG GOOGLE_FONTS=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
 RUN set -eu; \

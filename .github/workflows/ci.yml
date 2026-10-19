@@ -39,6 +39,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      # `src/node.rs` compiles only under `--features node`, which the line
+      # above does not enable.
+      - name: Clippy (Node binding)
+        run: cargo clippy --all-targets --features node -- -D warnings
+
       # Rustdoc warnings are silent locally unless you happen to run
       # `cargo doc`, so broken intra-doc links accumulated unnoticed until a
       # review counted 11 of them. `-D warnings` catches dangling `[`links`]`,
@@ -81,6 +86,14 @@ jobs:
       # the gated module.
       - name: Build without default features
         run: cargo build --no-default-features
+
+      # The Node binding end to end: the addon loads into a real Node, and the
+      # conversions run off the event loop and concurrently. A debug build, so
+      # it shares the cache the tests above just warmed.
+      - name: Node binding
+        run: |
+          scripts/build_node.sh debug
+          cd node && node --test
 
   # The full cross-platform pass, gated to PRs from a `release/*` branch —
   # issue #117 is why this matrix exists at all (Windows had never run a

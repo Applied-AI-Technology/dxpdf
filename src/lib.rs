@@ -5,6 +5,8 @@ pub mod error;
 pub mod field;
 pub mod i18n;
 pub mod model;
+#[cfg(feature = "node")]
+mod node;
 pub mod render;
 
 pub use error::Error;

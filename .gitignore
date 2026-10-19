@@ -22,3 +22,7 @@ __pycache__/
 /dist/
 /.venv/
 /venv/
+
+# The Node addon `scripts/build_node.sh` builds.
+/node/dxpdf.node
+/node/node_modules/
