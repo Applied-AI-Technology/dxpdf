@@ -11,13 +11,10 @@
 //! less the borderless control's (B0), so no face metric is pinned.
 //!
 //! B8, a `w:tblHeader` row with a direct bottom border over the same banded
-//! body under `firstRow`, is not asserted. Word bands the header row as well —
-//! it takes `band1Horz`'s top border and the body's bands shift by one row —
-//! where `resolve::conditional` starts the bands below it whenever `firstRow`
-//! is on. The fixture's style defines no `firstRow` layer, so it cannot tell
-//! whether Word counts the header row only in that case or always, letting a
-//! `firstRow` layer override the band; that needs a render of the same table
-//! under a style that does define one.
+//! body under `firstRow`, is a banding question rather than a border one: Word
+//! bands the header row too, its style defining no `firstRow` layer. It is
+//! asserted as `header-band.docx`'s H1, which repeats it beside the cases that
+//! settle the rule (`tests/header_band.rs`).
 
 use dxpdf::render::layout::draw_command::{DrawCommand, LayoutedPage};
 

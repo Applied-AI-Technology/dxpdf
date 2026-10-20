@@ -141,7 +141,10 @@ pub fn resolve_cell_conditional(
     look: Option<&TableLook>,
     overrides: &[TableStyleOverride],
 ) -> CellConditionalFormatting {
-    let regions = applicable_regions(pos, look);
+    let first_row_layer = overrides
+        .iter()
+        .any(|o| o.override_type == TableStyleOverrideType::FirstRow);
+    let regions = applicable_regions(pos, look, first_row_layer);
 
     let mut result = CellConditionalFormatting::default();
 
@@ -215,9 +218,22 @@ pub fn resolve_cell_conditional(
 /// record. **What would settle it**: a Word render (or `w:cnfStyle` capture) of
 /// a table with `band1Vert`/`band2Vert` layers, `noVBand` clear, and a cell
 /// spanning a band boundary.
+///
+/// # The first row leaves the bands only for a layer of its own
+///
+/// §17.7.6 orders the regions but does not say whether the row bands count the
+/// first row when `firstRow` is on. Word leaves it out — the bands starting at
+/// row 1 — only when the style defines a `firstRow` layer, which
+/// `first_row_layer` says; under a style with none it bands the first row as
+/// if `firstRow` were off, a `w:tblHeader` row included
+/// (`test-files/header-band.docx`, `tests/header_band.rs`). The first and last
+/// columns' part in the column bands, and the last row's, are the same
+/// question unmeasured, and keep the reading the spec's ordering suggests: an
+/// active region is out of the bands whatever the style defines.
 fn applicable_regions(
     pos: &CellGridPosition,
     look: Option<&TableLook>,
+    first_row_layer: bool,
 ) -> Vec<TableStyleOverrideType> {
     let CellGridPosition {
         row_idx,
@@ -280,8 +296,10 @@ fn applicable_regions(
     // §17.7.6 priority 2: horizontal banding (banded rows) — higher priority
     // than vertical banding.
     if h_band_active {
-        // When firstRow is active, banding starts from row 1.
-        let band_row = if first_row_active && row_idx > 0 {
+        // The bands start from row 1 when the first row is a region of its
+        // own, which takes a layer as well as the flag (see the doc above).
+        let first_row_out = first_row_active && first_row_layer;
+        let band_row = if first_row_out && row_idx > 0 {
             row_idx - 1
         } else {
             row_idx
@@ -290,7 +308,7 @@ fn applicable_regions(
         let in_first_band = (band_row / band_size).is_multiple_of(2);
 
         // Don't apply banding to first/last row if those regions are active.
-        let is_first = first_row_active && row_idx == 0;
+        let is_first = first_row_out && row_idx == 0;
         let is_last = last_row_active && row_idx == num_rows - 1;
         if !is_first && !is_last {
             if in_first_band {
@@ -438,7 +456,7 @@ mod tests {
 
     #[test]
     fn first_row_detected() {
-        let regions = applicable_regions(&pos(0, 2), None);
+        let regions = applicable_regions(&pos(0, 2), None, true);
         assert!(regions.contains(&TableStyleOverrideType::FirstRow));
         assert!(!regions.contains(&TableStyleOverrideType::LastRow));
     }
@@ -446,27 +464,27 @@ mod tests {
     #[test]
     fn last_row_detected() {
         let look = all_regions_on();
-        let regions = applicable_regions(&pos(5, 2), Some(&look));
+        let regions = applicable_regions(&pos(5, 2), Some(&look), true);
         assert!(regions.contains(&TableStyleOverrideType::LastRow));
         assert!(!regions.contains(&TableStyleOverrideType::FirstRow));
     }
 
     #[test]
     fn first_col_detected() {
-        let regions = applicable_regions(&pos(2, 0), None);
+        let regions = applicable_regions(&pos(2, 0), None, true);
         assert!(regions.contains(&TableStyleOverrideType::FirstCol));
     }
 
     #[test]
     fn last_col_detected() {
         let look = all_regions_on();
-        let regions = applicable_regions(&pos(2, 5), Some(&look));
+        let regions = applicable_regions(&pos(2, 5), Some(&look), true);
         assert!(regions.contains(&TableStyleOverrideType::LastCol));
     }
 
     #[test]
     fn nw_corner_detected() {
-        let regions = applicable_regions(&pos(0, 0), None);
+        let regions = applicable_regions(&pos(0, 0), None, true);
         assert!(regions.contains(&TableStyleOverrideType::NwCell));
         assert!(regions.contains(&TableStyleOverrideType::FirstRow));
         assert!(regions.contains(&TableStyleOverrideType::FirstCol));
@@ -475,7 +493,7 @@ mod tests {
     #[test]
     fn se_corner_detected() {
         let look = all_regions_on();
-        let regions = applicable_regions(&pos(5, 5), Some(&look));
+        let regions = applicable_regions(&pos(5, 5), Some(&look), true);
         assert!(regions.contains(&TableStyleOverrideType::SeCell));
     }
 
@@ -491,22 +509,22 @@ mod tests {
     #[test]
     fn absent_tbl_look_activates_first_row_first_column_and_horizontal_banding() {
         assert!(
-            applicable_regions(&pos(0, 2), None).contains(&TableStyleOverrideType::FirstRow),
+            applicable_regions(&pos(0, 2), None, true).contains(&TableStyleOverrideType::FirstRow),
             "0x04A0 sets firstRow (0x020)"
         );
         assert!(
-            applicable_regions(&pos(2, 0), None).contains(&TableStyleOverrideType::FirstCol),
+            applicable_regions(&pos(2, 0), None, true).contains(&TableStyleOverrideType::FirstCol),
             "0x04A0 sets firstColumn (0x080)"
         );
         assert!(
-            applicable_regions(&pos(1, 2), None).contains(&TableStyleOverrideType::Band1Horz),
+            applicable_regions(&pos(1, 2), None, true).contains(&TableStyleOverrideType::Band1Horz),
             "0x04A0 leaves noHBand (0x200) clear, so row banding is active"
         );
     }
 
     #[test]
     fn absent_tbl_look_leaves_last_row_inactive() {
-        let regions = applicable_regions(&pos(5, 2), None);
+        let regions = applicable_regions(&pos(5, 2), None, true);
         assert!(
             !regions.contains(&TableStyleOverrideType::LastRow),
             "0x04A0 leaves lastRow (0x040) clear: {regions:?}"
@@ -515,7 +533,7 @@ mod tests {
 
     #[test]
     fn absent_tbl_look_leaves_last_column_inactive() {
-        let regions = applicable_regions(&pos(2, 5), None);
+        let regions = applicable_regions(&pos(2, 5), None, true);
         assert!(
             !regions.contains(&TableStyleOverrideType::LastCol),
             "0x04A0 leaves lastColumn (0x100) clear: {regions:?}"
@@ -524,7 +542,7 @@ mod tests {
 
     #[test]
     fn absent_tbl_look_leaves_vertical_banding_inactive() {
-        let regions = applicable_regions(&pos(2, 2), None);
+        let regions = applicable_regions(&pos(2, 2), None, true);
         assert!(
             !regions.contains(&TableStyleOverrideType::Band1Vert)
                 && !regions.contains(&TableStyleOverrideType::Band2Vert),
@@ -537,7 +555,7 @@ mod tests {
     #[test]
     fn absent_tbl_look_leaves_every_corner_but_nw_inactive() {
         assert!(
-            applicable_regions(&pos(0, 0), None).contains(&TableStyleOverrideType::NwCell),
+            applicable_regions(&pos(0, 0), None, true).contains(&TableStyleOverrideType::NwCell),
             "firstRow x firstColumn are both set"
         );
         for (region, r, c) in [
@@ -545,7 +563,7 @@ mod tests {
             (TableStyleOverrideType::SwCell, 5, 0),
             (TableStyleOverrideType::SeCell, 5, 5),
         ] {
-            let regions = applicable_regions(&pos(r, c), None);
+            let regions = applicable_regions(&pos(r, c), None, true);
             assert!(
                 !regions.contains(&region),
                 "{region:?} needs lastRow or lastColumn, which 0x04A0 clears: {regions:?}"
@@ -555,7 +573,7 @@ mod tests {
 
     #[test]
     fn interior_cell_gets_banding() {
-        let regions = applicable_regions(&pos(1, 1), None);
+        let regions = applicable_regions(&pos(1, 1), None, true);
         // Row 1 with firstRow active: band_row = 0 → band1
         assert!(regions.contains(&TableStyleOverrideType::Band1Horz));
     }
@@ -563,7 +581,7 @@ mod tests {
     #[test]
     fn banding_alternates() {
         // Row 2 with firstRow active: band_row = 1 → band2
-        let regions = applicable_regions(&pos(2, 1), None);
+        let regions = applicable_regions(&pos(2, 1), None, true);
         assert!(regions.contains(&TableStyleOverrideType::Band2Horz));
     }
 
@@ -577,7 +595,7 @@ mod tests {
             no_h_band: Some(true),
             no_v_band: None,
         };
-        let regions = applicable_regions(&pos(1, 1), Some(&look));
+        let regions = applicable_regions(&pos(1, 1), Some(&look), true);
         assert!(!regions.contains(&TableStyleOverrideType::Band1Horz));
         assert!(!regions.contains(&TableStyleOverrideType::Band2Horz));
     }
@@ -592,23 +610,33 @@ mod tests {
             no_h_band: None,
             no_v_band: None,
         };
-        let regions = applicable_regions(&pos(0, 2), Some(&look));
+        let regions = applicable_regions(&pos(0, 2), Some(&look), true);
         assert!(!regions.contains(&TableStyleOverrideType::FirstRow));
     }
 
     #[test]
     fn band_size_2() {
         // Row 1 with firstRow: band_row=0, band_size=2 → 0/2=0 → band1
-        let r1 = applicable_regions(&banded(1, 1, 10, 6, 2, 1), None);
+        let r1 = applicable_regions(&banded(1, 1, 10, 6, 2, 1), None, true);
         assert!(r1.contains(&TableStyleOverrideType::Band1Horz));
 
         // Row 2: band_row=1, 1/2=0 → band1
-        let r2 = applicable_regions(&banded(2, 1, 10, 6, 2, 1), None);
+        let r2 = applicable_regions(&banded(2, 1, 10, 6, 2, 1), None, true);
         assert!(r2.contains(&TableStyleOverrideType::Band1Horz));
 
         // Row 3: band_row=2, 2/2=1 → band2
-        let r3 = applicable_regions(&banded(3, 1, 10, 6, 2, 1), None);
+        let r3 = applicable_regions(&banded(3, 1, 10, 6, 2, 1), None, true);
         assert!(r3.contains(&TableStyleOverrideType::Band2Horz));
+    }
+
+    #[test]
+    fn without_a_first_row_layer_the_first_row_is_banded() {
+        // firstRow on (the default look), but the style defines no layer for
+        // it: the bands start at row 0, as Word draws header-band.docx.
+        let r0 = applicable_regions(&pos(0, 2), None, false);
+        assert!(r0.contains(&TableStyleOverrideType::Band1Horz));
+        let r1 = applicable_regions(&pos(1, 2), None, false);
+        assert!(r1.contains(&TableStyleOverrideType::Band2Horz));
     }
 
     // ── Priority overlay ─────────────────────────────────────────────
@@ -639,7 +667,8 @@ mod tests {
             Some(blue_shading()),
             None,
         )];
-        let result = resolve_cell_conditional(&pos(1, 2), None, &overrides);
+        // No `firstRow` layer, so the bands count row 0: row 2 is `band1`.
+        let result = resolve_cell_conditional(&pos(2, 2), None, &overrides);
         let shading = result
             .cell_properties
             .as_ref()
@@ -695,11 +724,12 @@ mod tests {
                 None,
             ),
         ];
-        // Interior cell (1,1): band_row=0 → Band1Horz, band_col=0 → Band1Vert.
+        // Interior cell (2,1): with no `firstRow` layer the bands count row 0,
+        // so band_row=2 → Band1Horz; band_col=0 → Band1Vert.
         // Vertical banding has to be switched on explicitly — an absent
         // `tblLook` is 0x04A0, which sets noVBand.
         let look = all_regions_on();
-        let result = resolve_cell_conditional(&pos(1, 1), Some(&look), &overrides);
+        let result = resolve_cell_conditional(&pos(2, 1), Some(&look), &overrides);
         let shading = result.cell_properties.unwrap().shading.cloned().unwrap();
         assert_eq!(
             shading.fill,
@@ -801,7 +831,8 @@ mod tests {
     #[test]
     fn positional_regions_override_whole_table() {
         for (region, r, c) in [
-            (TableStyleOverrideType::Band1Horz, 1, 2),
+            // Row 2: with no `firstRow` layer the bands count row 0.
+            (TableStyleOverrideType::Band1Horz, 2, 2),
             (TableStyleOverrideType::FirstRow, 0, 2),
             (TableStyleOverrideType::FirstCol, 2, 0),
             (TableStyleOverrideType::NwCell, 0, 0),
@@ -884,9 +915,10 @@ mod tests {
             ),
         ];
         // Vertical banding is only active when the `tblLook` says so — 0x04A0,
-        // the absent-element default, sets noVBand.
+        // the absent-element default, sets noVBand. Row 2 is `band1`: there is
+        // no `firstRow` layer, so the bands count row 0.
         let look = all_regions_on();
-        let result = resolve_cell_conditional(&pos(1, 1), Some(&look), &overrides);
+        let result = resolve_cell_conditional(&pos(2, 1), Some(&look), &overrides);
         assert_eq!(
             result
                 .cell_properties
@@ -1001,6 +1033,7 @@ mod tests {
                         col_band_size: 1,
                     },
                     look,
+                    true,
                 );
                 // Word omits `cnfStyle` entirely on a cell in no region, so an
                 // absent one reads as "no bits", not as "unknown".
