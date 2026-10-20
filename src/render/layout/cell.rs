@@ -24,9 +24,9 @@ pub struct CellLayout {
     /// the row's slack is shared out — a bottom-aligned paragraph carrying a
     /// 30pt `wrapNone` picture stops 30pt short of the row's foot, the same as
     /// one carrying a `wrapSquare` picture. And one that reaches past the row,
-    /// as the signature on every tenant's dog-license certificate does, leaves
-    /// no slack at all, so its paragraph stays at the top of a bottom-aligned
-    /// cell and the picture lands its anchor offset below the row's top.
+    /// as a real-world certificate's signature picture does, leaves no slack
+    /// at all, so its paragraph stays at the top of a bottom-aligned cell and
+    /// the picture lands its anchor offset below the row's top.
     pub align_height: Pt,
     /// §17.4.1 row-split cut model, in cell-content coordinates (i.e. *not*
     /// shifted by the cell margins — the splitter adds `margin_top`). Empty for

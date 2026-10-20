@@ -3,7 +3,7 @@
 what paragraph spacing Word gives a document whose ``w:docDefaults`` carries
 an ``rPrDefault`` but no ``pPrDefault``.
 
-albanyny's CivicRecordCertificate has exactly that ``styles.xml`` and no
+A real-world certificate template has exactly that ``styles.xml`` and no
 ``settings.xml``, and Word sets every one of its lines 1.7–3.7pt further
 apart than §17.3.1.33's defaults (no space after, single spacing) would.
 §17.7.2 leaves an absent ``pPrDefault`` to the application, so only a Word

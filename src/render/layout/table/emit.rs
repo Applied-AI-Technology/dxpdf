@@ -266,7 +266,7 @@ fn emit_one_row(
     // the row's and not any one cell's. `measure_table_rows` grew the row by
     // the widest such border across its cells, and Word aligns every cell's
     // content above it — a cell whose own bottom is `nil` included. The
-    // corpus's permit cards bottom-align "Signature:" in such a cell beside
+    // corpus's card templates bottom-align "Signature:" in such a cell beside
     // one with a 0.5pt bottom rule, on their table's last row, and Word sets
     // its descent on the rule's top edge, 0.5pt above the row's foot.
     let row_dy_bottom = if band_below > Pt::ZERO {

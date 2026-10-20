@@ -1258,8 +1258,8 @@ fn styles_over_normal(style_body: &str) -> String {
 
 /// §17.7.2: a table style's run properties override the paragraph style's in its
 /// cells — but only those it declares. A `docDefaults` font size is not the
-/// table style's, and must not override `Normal` from inside it: the tenant
-/// DonationReports' `TableGrid` declares no size over a 22 half-point
+/// table style's, and must not override `Normal` from inside it: a real
+/// report template's `TableGrid` declares no size over a 22 half-point
 /// `docDefaults` and a 20 half-point `Normal`, and Word sets the cells at 10pt.
 /// The control is the same table style declaring 14pt, which does override.
 #[test]

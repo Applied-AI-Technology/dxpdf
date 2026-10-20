@@ -76,7 +76,7 @@ impl RowHeightRule {
     /// same as a row with no rule — and `exact` counts its top margin inside
     /// the declared height and its bottom margin outside it. The second looks
     /// arbitrary and is what Word draws in every compatibility mode; it is why
-    /// the corpus's permit cards (`hRule="exact"` at 3096 twips, 99-twip cell
+    /// the corpus's card templates (`hRule="exact"` at 3096 twips, 99-twip cell
     /// margins) stand 159.75pt apart in Word and not 154.8pt. A table's outer
     /// bottom border goes with the bottom margin, below the declared height
     /// (the last exact row of the fixture's tables ends 0.5pt lower in Word

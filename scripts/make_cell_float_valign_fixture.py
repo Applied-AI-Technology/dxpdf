@@ -3,7 +3,7 @@
 anchored in a ``w:vAlign`` cell reaches into the cell's content, when it
 wraps text.
 
-haddam's ``DogLicenseTemplate`` signs in a bottom-aligned cell of a row at
+A real-world certificate template signs in a bottom-aligned cell of a row at
 least 73.8pt tall. The cell's one paragraph is empty but for a
 ``wrapTopAndBottom`` signature picture 33.25pt tall, anchored 25.95pt below
 the paragraph's top. Word draws the picture with its bottom on the row's
@@ -18,7 +18,7 @@ Column A holds the picture's paragraph, column B a bottom-aligned label
 ``R<n>B``. Pictures are 181.95pt wide; offsets and heights in points:
 
   R1  ``wrapTopAndBottom``, 25.95 below the paragraph, 33.25 tall —
-      haddam's cell
+      the template's cell
   R2  R1 with ``wrapSquare``
   R3  R1 with ``wrapNone``
   R4  R1 at offset 0, over the paragraph's line
@@ -167,19 +167,19 @@ def cell(width: int, align: str, content: str) -> str:
     )
 
 
-HADDAM_OFFSET = 329565
-HADDAM_HEIGHT = 422275
+SIGNATURE_OFFSET = 329565
+SIGNATURE_HEIGHT = 422275
 
 # (wrap, offset, height, column A's alignment, column B's, text beside the picture)
 ROWS = [
-    ("topAndBottom", HADDAM_OFFSET, HADDAM_HEIGHT, "bottom", "bottom", ""),
-    ("square", HADDAM_OFFSET, HADDAM_HEIGHT, "bottom", "bottom", ""),
-    ("none", HADDAM_OFFSET, HADDAM_HEIGHT, "bottom", "bottom", ""),
-    ("topAndBottom", 0, HADDAM_HEIGHT, "bottom", "bottom", ""),
-    ("topAndBottom", HADDAM_OFFSET, 60 * EMU_PER_PT, "bottom", "bottom", ""),
-    ("topAndBottom", HADDAM_OFFSET, HADDAM_HEIGHT, "bottom", "bottom", "R6P"),
-    ("topAndBottom", HADDAM_OFFSET, HADDAM_HEIGHT, "top", "top", ""),
-    ("topAndBottom", HADDAM_OFFSET, HADDAM_HEIGHT, "center", "bottom", ""),
+    ("topAndBottom", SIGNATURE_OFFSET, SIGNATURE_HEIGHT, "bottom", "bottom", ""),
+    ("square", SIGNATURE_OFFSET, SIGNATURE_HEIGHT, "bottom", "bottom", ""),
+    ("none", SIGNATURE_OFFSET, SIGNATURE_HEIGHT, "bottom", "bottom", ""),
+    ("topAndBottom", 0, SIGNATURE_HEIGHT, "bottom", "bottom", ""),
+    ("topAndBottom", SIGNATURE_OFFSET, 60 * EMU_PER_PT, "bottom", "bottom", ""),
+    ("topAndBottom", SIGNATURE_OFFSET, SIGNATURE_HEIGHT, "bottom", "bottom", "R6P"),
+    ("topAndBottom", SIGNATURE_OFFSET, SIGNATURE_HEIGHT, "top", "top", ""),
+    ("topAndBottom", SIGNATURE_OFFSET, SIGNATURE_HEIGHT, "center", "bottom", ""),
 ]
 
 

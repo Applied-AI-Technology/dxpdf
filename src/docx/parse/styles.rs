@@ -256,7 +256,7 @@ impl From<StylesXml> for StyleSheet {
 /// nothing steps exactly as one stating `w:line="278"` and further than one
 /// stating 276, in Calibri at 8–20pt and in Arial, so it is a multiple of the
 /// face's own height like any other — 0.1pt a line more than 1.15 at 10pt,
-/// which over albanyny's CivicRecordCertificate adds up to 2.3pt.
+/// which over a real-world one-page certificate adds up to 2.3pt.
 ///
 /// A `pPrDefault` with no `w:pPr` is read as stating nothing, so §17.3.1.33's
 /// no space and single spacing; no Word render has asked what Word does there.

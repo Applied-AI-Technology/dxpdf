@@ -156,8 +156,8 @@ fn resolve_one(
     //
     // Table styles are the exception: their run properties *are* such a level,
     // overriding the paragraph style's in a cell (`build_fragments`), so a doc
-    // default folded in here would masquerade as the table style's own. The
-    // tenant DonationReports' `TableGrid` declares no font size over a 22
+    // default folded in here would masquerade as the table style's own. A
+    // real-world report template's `TableGrid` declares no font size over a 22
     // half-point `docDefaults` and a 20 half-point `Normal`, and Word sets its
     // cells at 10pt.
     if !matches!(

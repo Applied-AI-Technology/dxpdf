@@ -7,7 +7,7 @@
 //! out with it. A host without them (every Linux host, and a Mac, whose own
 //! Symbol is a different face) draws the private-use character remapped to a
 //! Unicode bullet in a text face instead. Measured in Word (Word for Mac 16,
-//! PDF export) on the tenant announcement letters: a Calibri 11pt line at 1.15
+//! PDF export) on real letter templates: a Calibri 11pt line at 1.15
 //! with an 11pt Symbol bullet steps 16.08pt, Symbol's ascent over Calibri's
 //! descent, where its unlabelled continuation steps 15.36pt.
 //!

@@ -9,7 +9,7 @@
 //! in from the box, its foot raised off the baseline by the bottom. Word, for
 //! the 36×24pt picture: E0 (none) to E1 (6pt below) and E2 (6pt above) each add
 //! 6.0pt to the line, E3 (left) and E4 (right) move `E<n>b` 6.0pt right and
-//! leave the line, E5 (3pt all round) does both, and the receipt's E6
+//! leave the line, E5 (3pt all round) does both, and a real template's E6
 //! (0.75pt right and below) moves and grows by 0.72 on Word's grain. E3's
 //! picture is drawn 6.0pt right of E0's, E1's foot 5.94pt higher above its
 //! baseline.
@@ -80,7 +80,7 @@ fn the_extent_grows_the_line_by_its_top_and_bottom() {
     assert_near(growth(&p, "E2z", "E3"), 0.0, "E3, left only");
     assert_near(growth(&p, "E3z", "E4"), 0.0, "E4, right only");
     assert_near(growth(&p, "E4z", "E5"), 6.0, "E5, 3pt all round");
-    assert_near(growth(&p, "E5z", "E6"), 0.75, "E6, the receipt's");
+    assert_near(growth(&p, "E5z", "E6"), 0.75, "E6, the template's");
 }
 
 #[test]

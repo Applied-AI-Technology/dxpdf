@@ -1077,8 +1077,8 @@ impl KeepNextGroupMeasurement {
 /// the group fits wherever its blocks placed one by one would. §17.3.3.1: what
 /// follows a page break is on the next page whatever the chain wants, so a
 /// paragraph holding one counts only what comes before it — the chunk
-/// placement puts on this page — and closes the group. Greenwich's
-/// ShellfishDailyCashReport ends each report with a `keepNext` paragraph
+/// placement puts on this page — and closes the group. A real-world daily
+/// report template ends each report with a `keepNext` paragraph
 /// before one that is a page break alone, whose mark line stays on the page;
 /// charged its 8pt space after as well, the pair missed the page by 6.6pt,
 /// moved, and Word's three pages came out four.

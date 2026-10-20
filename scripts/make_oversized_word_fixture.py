@@ -2,12 +2,13 @@
 """Build ``test-files/oversized-word.docx``, which asks how Word breaks text
 that has a line-break opportunity inside a word too wide for its line.
 
-Word's ReceiptTemplate sets ``${amount}{/receiptItems}`` in a 34.2pt cell as
-``${amoun`` / ``t}{/recei`` / ``ptItems}``: having cut ``${amount}``, it fills
-the second line past the opportunity after ``/`` instead of breaking there,
-because what follows, ``receiptItems}``, is wider than the cell and would be
-cut anyway. Its ``{signature}{signature2}{/`` / ``owner}`` breaks at the same
-opportunity, where what follows fits a line of its own. Two readings fit both:
+A real template sets a merge tag of the shape ``${field}{/loopName}`` in a
+34.2pt cell as three lines, the first cut inside ``${field}`` and the third
+holding the end of ``loopName}``: having cut ``${field}``, Word fills the
+second line past the opportunity after ``/`` instead of breaking there,
+because what follows, ``loopName}``, is wider than the cell and would be cut
+anyway. A second tag of the shape ``{tag}{tag2}{/`` / ``list}`` breaks at the
+same opportunity, where what follows fits a line of its own. Two readings fit both:
 Word cuts only a *piece* between opportunities that is too wide for a line, or
 it cuts the whole space-delimited *word* once any of it is. These cases take
 them apart, each in a fixed-layout one-cell table 72pt wide with no cell

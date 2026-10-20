@@ -6,7 +6,7 @@ ask what places a table in compatibility mode when the styles part has no
 ``table-indent-compat-none.docx`` measured that with no ``settings.xml`` a
 table's indent is to its first cell's text: the table stands one cell
 margin left of the margin. Its styles part declares ``TableNormal`` with a
-``tblInd`` of 0 and 108-twip margins. albanyny's CivicRecordCertificate has
+``tblInd`` of 0 and 108-twip margins. A real-world certificate template has
 no ``settings.xml`` either, but no table style at all, and Word draws its
 table's left border **on** the margin with the text 5pt in — Word 2013's
 placement. The files differ only in the styles part, and ``-none-14`` in

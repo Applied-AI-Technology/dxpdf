@@ -3,7 +3,7 @@
 picture's ``wp:effectExtent`` adds to the line it stands on and to the width
 it takes.
 
-chazy's ``ReceiptTemplate`` centres a 65.25pt logo whose ``effectExtent``
+A real-world template centres a 65.25pt logo whose ``effectExtent``
 gives 9525 EMU (0.75pt) below and to the right; everything under the logo
 stands 0.75–0.95pt lower in Word than a line sized from ``wp:extent`` alone
 puts it.
@@ -15,11 +15,11 @@ picture is. The extents, in points, left/top/right/bottom:
 
   E0  0/0/0/0 (the control)    E4  0/0/6/0
   E1  0/0/0/6                  E5  3/3/3/3
-  E2  0/6/0/0                  E6  0/0/0.75/0.75 (the receipt's)
+  E2  0/6/0/0                  E6  0/0/0.75/0.75 (the logo's)
   E3  6/0/0/0
 
 ``M1``/``M2`` repeat E1/E2 at 1.15 (``w:line`` 276, auto) and ``X1`` E1
-at an exact 40pt line. ``C1`` is the receipt's shape: a centred paragraph
+at an exact 40pt line. ``C1`` is the template's shape: a centred paragraph
 holding only the picture with E1's extent, then ``C1z``.
 
 Regenerate and commit the result if the content changes; the build is

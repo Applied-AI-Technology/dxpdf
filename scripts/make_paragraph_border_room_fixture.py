@@ -3,8 +3,8 @@
 paragraph's top and bottom borders take (§17.3.1.24, §17.3.1.42/§17.3.1.7).
 
 dxpdf charged a paragraph's top or bottom border its ``w:space`` alone, on
-the reading that only the space separates line from text. The clerk
-summary reports put an empty paragraph with a 0.75pt bottom border 3pt
+the reading that only the space separates line from text. Some report
+templates put an empty paragraph with a 0.75pt bottom border 3pt
 below its text between two tables, and Word sets the second table 0.8pt
 lower than that reading does — as though the line's own width took room
 as well.
@@ -17,7 +17,7 @@ from the case to ``z`` the bottom's:
   T<s><w>  ``w:top`` with ``w:space`` s (0 or 3pt) and width w (6 or 24
            eighths: 0.75 or 3pt)
   B<s><w>  the same as ``w:bottom``
-  E        an empty paragraph with the clerk reports' bottom border
+  E        an empty paragraph with those templates' bottom border
            (``sz="6" space="3"``) between two plain ones
 
 Regenerate and commit the result if the content changes; the build is

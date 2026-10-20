@@ -149,7 +149,7 @@ pub fn build_section_blocks(
 ///
 /// The settings compared are the borders as the cascade left them, before
 /// any member lost an edge here. A table or any other block between two
-/// paragraphs ends the group. holdenma's notices run their instructions
+/// paragraphs ends the group. A notice template runs its instructions
 /// through paragraphs that each declare the same 0.75pt bottom border, and
 /// Word draws one line under the last of them.
 ///
@@ -401,9 +401,9 @@ fn build_non_story_content(
 
                 // §17.10.1: an empty paragraph in a header or footer still
                 // occupies a line, as tall as its paragraph mark's font makes
-                // it — the last one too. Word stacks holdenma's
-                // ClerkDailyInPersonReport footer, "Page | N" over an empty
-                // 8pt-mark paragraph, 31.97pt above its footer margin: the
+                // it — the last one too. Word stacks a report template's
+                // footer, "Page | N" over an empty 8pt-mark paragraph,
+                // 31.97pt above its footer margin: the
                 // mark's 8pt line and its 8pt after. Without a line of its own
                 // the last paragraph took the document default's 11pt one and
                 // set the page number 4pt high.
@@ -526,8 +526,8 @@ mod tests {
 
     /// §17.10.1: every empty paragraph in a header/footer holds a line — the
     /// last one too, or a lone one. Word stacks a footer ending in an empty
-    /// paragraph with that paragraph's line under it (holdenma's
-    /// ClerkDailyInPersonReport).
+    /// paragraph with that paragraph's line under it (a real-world report
+    /// template's footer).
     #[test]
     fn empty_header_paragraphs_each_hold_a_line() {
         let resolved = empty_resolved();

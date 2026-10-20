@@ -118,20 +118,22 @@ pub fn break_offsets(text: &str) -> Vec<usize> {
 /// 72pt cell is one word, cut where the line runs out (`abcdefgh/ijklm` /
 /// `nop/qrstuvwx`), and `abcd/` is followed on its line by as much of a long
 /// word as fits, where a space or a hyphen in the same place sends the long
-/// word to the next line (`test-files/oversized-word.docx`); the tenant
-/// impoundment report cuts `{owner_name}{/is_data}{/tab` / `leItems}` across
-/// both a `}{` and a `/`, and its receipt fills `t}{/recei` on a line. Those
-/// two are the opportunities measured; the rest UAX #14 grants between ASCII
-/// punctuation and letters (after `!` or `?` before a letter, say) are taken
-/// away on the same footing — Word's Latin text breaks at spaces and hyphens.
+/// word to the next line (`test-files/oversized-word.docx`); a real-world
+/// report template cuts three merge tags in a row inside the third one's
+/// name, past both a `}{` and a `/`, and another fills a line to `t}{/` and five letters
+/// of the tag after it. Those two are the opportunities measured; the rest
+/// UAX #14 grants between ASCII punctuation and letters (after `!` or `?`
+/// before a letter, say) are taken away on the same footing — Word's Latin
+/// text breaks at spaces and hyphens.
 /// A break touching any non-ASCII character is left to UAX #14, and so is the
 /// break at the end of `text`, whose follower is not known here.
 ///
 /// The space is the other half: Word breaks after a run of spaces before an
 /// ASCII character whatever precedes the spaces, where UAX #14 keeps an
 /// opening bracket or quotation mark with what follows it however many spaces
-/// intervene (LB14 `OP SP* ×`, LB15). The tenant DogTransactionReports'
-/// `{#onlineTransactions}{ orderPaidDate}` wraps after its space in Word, and
+/// intervene (LB14 `OP SP* ×`, LB15). A real-world report template's
+/// `{#loop}{ field}` — a field tag opened with a space — wraps after the space
+/// in Word, and
 /// its 95.6pt column — which Word would have widened to the whole tag had it
 /// no break (`build::table`'s `autofit_widths`) — says the same.
 fn tailor_ascii_breaks(text: &str, offsets: &mut Vec<usize>) {
@@ -162,8 +164,9 @@ fn tailor_ascii_breaks(text: &str, offsets: &mut Vec<usize>) {
 /// after a space or an opening bracket). After a letter or digit the hyphen
 /// keeps its ordinary LB21 break opportunity, so `TOKEN-` / `1234567890` is
 /// how they wrap — and so it does after anything else a minus sign cannot
-/// follow, a closing bracket included: the tenant DelinquentDogReport's
-/// `{params.reportYear}-01-01`, whose header column Word sizes for `…}-`.
+/// follow, a closing bracket included: a real-world report template's date
+/// written as a merge tag and `-01-01`, whose header column Word sizes for
+/// `…}-`.
 /// ICU4X 2.x exposes no option for this
 /// ([`LineBreakOptions`] covers strictness and word mode only), hence this
 /// post-pass; if a future ICU4X grows a numeric-tailoring option, prefer it.
@@ -234,15 +237,12 @@ mod tests {
     }
 
     /// Word breaks after a space whatever stands before it. UAX #14 does not
-    /// after an opening bracket or quotation mark (LB14, LB15) — the tenant
-    /// DogTransactionReports' `{#onlineTransactions}{ orderPaidDate}`, which
-    /// Word wraps after the space.
+    /// after an opening bracket or quotation mark (LB14, LB15) — a report
+    /// template's `{#loop}{ field}`-shaped tags, which Word wraps after the
+    /// space.
     #[test]
     fn ascii_text_breaks_after_every_space() {
-        assert_eq!(
-            pieces("{#onlineTransactions}{ orderPaidDate}"),
-            ["{#onlineTransactions}{ ", "orderPaidDate}"]
-        );
+        assert_eq!(pieces("{#loop}{ field}"), ["{#loop}{ ", "field}"]);
         assert_eq!(pieces("( a \"  b"), ["( ", "a ", "\"  ", "b"]);
     }
 
@@ -383,8 +383,8 @@ mod tests {
     }
 
     /// After a closing bracket a hyphen is no minus sign, and breaks: the
-    /// tenant DelinquentDogReport's `{params.reportYear}-01-01`, whose column
-    /// Word sizes for `…}-` as its widest word.
+    /// report template's merge-tag date, `{year}-01-01` here, whose column Word
+    /// sizes for `…}-` as its widest word.
     #[test]
     fn a_hyphen_after_a_closing_bracket_breaks_before_digits() {
         assert_eq!(pieces("{year}-01-01"), ["{year}-", "01-", "01"]);

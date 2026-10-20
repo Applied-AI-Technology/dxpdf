@@ -2,12 +2,12 @@
 """Build ``test-files/hanging-tab-{15,compat,legacy,legacy-15}.docx``, which
 ask where a tab on the first line of a hanging-indent paragraph stops.
 
-holdenma's DogLicenseDeliquencyNotice and DogLicenseRenewalNotice open a
-paragraph ``w:ind left="333" hanging="180"`` with a tab, and Word sets the
-text after it at the left indent, 16.65pt, not at the 36pt default stop: a
-hanging indent is a tab stop. §17.15.3's ``w:noTabHangInd`` names the
-behaviour by turning it off. The probe asks how the stop orders against the
-paragraph's own stops, and whether the legacy flag holds in each mode.
+Two real-world notice templates open a paragraph ``w:ind left="333"
+hanging="180"`` with a tab, and Word sets the text after it at the left
+indent, 16.65pt, not at the 36pt default stop: a hanging indent is a tab
+stop. §17.15.3's ``w:noTabHangInd`` names the behaviour by turning it off.
+The probe asks how the stop orders against the paragraph's own stops, and
+whether the legacy flag holds in each mode.
 
 The four files differ only in ``settings.xml``:
 

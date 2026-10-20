@@ -3,7 +3,7 @@
 columns of an autofit table (§17.4.52 ``tblLayout`` absent or ``autofit``)
 whose content does not fit the widths its cells prefer.
 
-Word's DonationReport has six columns, each ``tcW`` 1440 twips (72pt), in a
+A report template has six columns, each ``tcW`` 1440 twips (72pt), in a
 ``tblW`` ``auto`` table, and two of them hold one unbreakable merge tag wider
 than 72pt. Word draws the columns 94.56, 57.12, 62.16, 62.16, 62.16 and
 93.84pt wide — the tags' columns widened to hold them, the rest narrowed to
@@ -12,13 +12,13 @@ keep the 432pt total — where the declared grid would give 72pt each.
 Each case is a one-row table in Calibri 10pt, each cell a label paragraph
 ``<case><column>`` over its content, with ``TableNormal``'s 5.4pt left
 and right cell margins, every ``tcW`` 1440 twips, under a ``SEP<case>``
-paragraph. ``W`` stands for ``{#donations}{Donor}`` (about 84pt, no
-opportunity); ``w`` for ``{x}`` (short).
+paragraph. ``W`` stands for a 19-character merge tag that opens a loop (about
+84pt, no opportunity); ``w`` for ``{x}`` (short).
 
   F1  ``tblW auto``: W w w w w w — one wide column
   F2  ``tblW auto``: W w w w w W — the report's shape
   F3  ``tblW auto``: w w w w w w — the control, nothing too wide
-  F4  ``tblW auto``: ``Donor name`` sentence words (spaces, each word short)
+  F4  ``tblW auto``: a four-word sentence (spaces, each word short), then
       w w w w w — wide content that can wrap
   F5  ``tblW 5000 pct``: W w w w w w — a fixed total
   F6  ``tblW auto``: W, then five cells holding w of different lengths
@@ -76,7 +76,7 @@ SECT = (
     'w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>'
 )
 
-W = "{#donations}{Donor}"
+W = "{#customers}{Buyer}"
 BORDERS = "".join(
     f'<w:{s} w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
     for s in ("top", "left", "bottom", "right", "insideH", "insideV")
@@ -107,7 +107,7 @@ CASES = [
     ("F1", [W, "{x}", "{x}", "{x}", "{x}", "{x}"], AUTO),
     ("F2", [W, "{x}", "{x}", "{x}", "{x}", W], AUTO),
     ("F3", ["{x}"] * 6, AUTO),
-    ("F4", ["Donor name and address", "{x}", "{x}", "{x}", "{x}", "{x}"], AUTO),
+    ("F4", ["Rebuy name and address", "{x}", "{x}", "{x}", "{x}", "{x}"], AUTO),
     ("F5", [W, "{x}", "{x}", "{x}", "{x}", "{x}"], PCT),
     ("F6", [W, "{a}", "{abcdef}", "{abcdefghijk}", "{ab}", "{abcd}"], AUTO),
 ]

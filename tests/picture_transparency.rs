@@ -13,8 +13,8 @@ fn layout(name: &str) -> Vec<LayoutedPage> {
 
 /// §20.1.8.4 `a:alphaModFix`: a picture's opacity reaches its draw command —
 /// opaque without the element, `amt / 100000` with it, inline and anchored
-/// alike. Word draws the shellfish permit cards' seal at `amt="5000"` as a
-/// faint watermark; this engine drew it at full strength over the text.
+/// alike. Word draws a real template's background picture at `amt="5000"` as
+/// a faint watermark; this engine drew it at full strength over the text.
 #[test]
 fn a_picture_is_drawn_at_its_alpha_mod_fix_opacity() {
     let pages = layout("picture-transparency.docx");

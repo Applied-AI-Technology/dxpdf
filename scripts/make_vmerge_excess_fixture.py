@@ -2,13 +2,13 @@
 """Build ``test-files/vmerge-excess.docx``, which asks which row grows when a
 vertically merged cell holds more than the rows it spans.
 
-albanyny's ``DogLicenseDeliquencyNotice`` (and its renewal notice, in every
-tenant) closes with a table whose first column is one cell merged down three
-rows of at least 945, 350 and 260 twips, holding six paragraphs; beside it,
-the signature lines are the bottom border of a row-1 cell and the top border
-of the row-2 cell under it, and row 3 holds a bottom-aligned italic note.
-The text in the merged cell stands where Word puts it, but the note and the
-table's bottom sit 0.4–0.6pt lower than Word's.
+A real-world notice template (and a sibling of it) closes with a table
+whose first column is one cell merged down three rows of at least 945, 350
+and 260 twips, holding six paragraphs; beside it, the signature lines are
+the bottom border of a row-1 cell and the top border of the row-2 cell under
+it, and row 3 holds a bottom-aligned italic note. The text in the merged
+cell stands where Word puts it, but the note and the table's bottom sit
+0.4–0.6pt lower than Word's.
 
 Each table ``V<n>`` has two columns and no table borders: column A one cell
 merged down every row, column B a cell per row — row 1's empty with a 0.5pt

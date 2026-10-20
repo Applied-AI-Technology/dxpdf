@@ -210,9 +210,9 @@ fn shape_each(fragments: &mut [Fragment], measurer: &TextMeasurer, open_type: bo
 }
 
 /// Kern the pair two neighbouring fragments of one kerned run form where a
-/// line-break opportunity split them — `{/` and `summaryItems}`, which UAX #14
+/// line-break opportunity split them — `{/` and the loop name after it, which UAX #14
 /// lets a line break between. Word kerns the text as the string it is: the
-/// corpus's DogLicenseReport sets `{total_count}{/summaryItems}` in bold
+/// corpus's report template sets a `{count}{/loop}` pair of tags in bold
 /// Calibri 140.76pt wide, which is the whole string kerned (140.74pt) and not
 /// its three pieces kerned apart (141.04pt), and so fits the 140.75pt cell
 /// that the pieces would have wrapped in.

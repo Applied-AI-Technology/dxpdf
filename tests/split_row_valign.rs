@@ -6,7 +6,7 @@
 //! A cell the break leaves whole stays on the first page and keeps its
 //! alignment within the first half (V1). A cell the break cuts through is
 //! laid out top-down on both pages, bottom- or centre-aligned alike (V2, V3)
-//! — holdenma's renewal notices' right-hand cell. The first half charges the
+//! — a real notice template's right-hand cell. The first half charges the
 //! 0.5pt borders it draws as well as the cell margins, so nine 12pt lines fit
 //! in the 120pt left, not ten. Every line is an exact 12pt, so dxpdf's
 //! positions match Word's whatever face draws them.

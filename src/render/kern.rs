@@ -38,7 +38,7 @@
 //!
 //! Word kerns the **characters** either side of a glyph boundary, so a
 //! ligature is kerned by the letters it draws: its first against what precedes
-//! it and its last against what follows. Measured across the 118 tenant
+//! it and its last against what follows. Measured across 118 real-world
 //! templates' Word renders in Calibri: `.`·`t_i` is set −44 units (67 times),
 //! `n`·`t_i` −19 and `p`·`t_i` −9 — Calibri's `.`·`t`, `n`·`t` and `p`·`t`
 //! pairs — while `t_i`·`o` takes `i`·`o`'s 0, not `t`·`o`'s −20; and in
@@ -46,8 +46,8 @@
 //! looks a pair up through the `cmap` from characters, ligated run or not,
 //! and the pair a ligature glyph would form in Carlito's `GPOS` (`n`·`t_i`,
 //! −19 there and in Calibri's own `GPOS`) is never asked for. That pair
-//! happens to equal `n`·`t`; Word's −19 before `{quantity}`'s `ti` is what
-//! fits it in its cell in the Clerk's Monthly Report.
+//! happens to equal `n`·`t`; Word's −19 before a merge tag's `ti` is what
+//! fits it in its cell in a real-world monthly report template.
 //!
 //! What this cannot recover is a pair the original's `kern` table omits and the
 //! stand-in's `GPOS` lists anyway. Carlito Regular has none among ASCII,
@@ -65,7 +65,7 @@
 //! between and a subsetter is free to drop either table.
 //!
 //! Whether Word kerns a font of its own that has no `kern` table from `GPOS`
-//! has not been measured; no Office font a tenant template uses is one.
+//! has not been measured; no Office font a corpus template uses is one.
 
 use std::cell::RefCell;
 

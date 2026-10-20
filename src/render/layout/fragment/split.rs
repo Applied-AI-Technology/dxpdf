@@ -27,10 +27,11 @@ pub type MeasureFn<'a> = Option<&'a dyn Fn(&str, &FontProps) -> (Pt, TextMetrics
 /// A word is what lies between two break opportunities: a run of text
 /// fragments each ending [`BreakAfter::Prohibited`], and the one after them.
 /// It spans as many fragments as `<w:r>` runs split it into, and Word cuts it
-/// as one: `{#owner}{signature}` `{` `signature2}{/owner}` is three runs, each
-/// narrower than its 159pt line and together 191pt, and Word fills the line to
-/// `…{signature2}{/` before cutting (DogLicenseTemplate_old1415). Checked one
-/// fragment at a time, none was cut, and the line broke at a run boundary.
+/// as one: a string of merge tags set in three runs, each narrower than its
+/// 159pt line and together 191pt, and Word fills the line to just past the
+/// last tag's `{/` before cutting (a real-world certificate template).
+/// Checked one fragment at a time, none was cut, and the line broke at a run
+/// boundary.
 ///
 /// "Too wide" is measured **without the word's trailing whitespace**, the same
 /// width line fitting checks overflow against: trailing space is allowed to
@@ -182,8 +183,8 @@ pub fn split_oversized_fragments(
             // share a line and is dropped at a line end — no pair is formed
             // across a line break — exactly as between two words
             // (`fragment::shape`'s `kern_across_breaks`). Word cuts the
-            // kerned word: DogLicenseReport's `${apcp_fee}` fits `p_fee}` on
-            // its second line, which the unkerned pieces overflow.
+            // kerned word: a report template's fee merge tag fits its last six
+            // characters on its second line, which the unkerned pieces overflow.
             let pair = kerning
                 .as_deref()
                 .and_then(|k| k.get(i))
@@ -348,9 +349,10 @@ mod tests {
     }
 
     /// A word is what lies between two break opportunities, however many
-    /// fragments — `<w:r>` runs — it spans. Word cuts `{#owner}{signature}`
-    /// `{` `signature2}{/owner}`, three runs each narrower than its line, where
-    /// the line runs out (DogLicenseTemplate_old1415), not at a run boundary.
+    /// fragments — `<w:r>` runs — it spans. Word cuts a string of merge tags
+    /// set in three runs, each narrower than its line, where
+    /// the line runs out (a real-world certificate template), not at a run
+    /// boundary.
     #[test]
     fn a_word_over_several_fragments_is_cut_as_one() {
         // "ab" | "cd " with no opportunity between: 40pt together, 20pt each,

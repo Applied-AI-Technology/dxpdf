@@ -10,7 +10,7 @@
 //! (`-none`, and `-none-14` naming mode 14) a table has no margins but its own
 //! and, stating no `tblInd`, stands with its grid on the margin — its text one
 //! cell margin in — while a `tblInd` it does state is still to the text.
-//! albanyny's CivicRecordCertificate is the `-none` shape.
+//! A real-world certificate template is the `-none` shape.
 //!
 //! Word's numbers are quoted per case; they sit within 0.12pt of these, Word's
 //! own positioning grain in its PDFs.

@@ -7,8 +7,8 @@ Row 1's pictures are ``wrapNone``, row 2's ``wrapSquare``. The labels show the
 alignment acting; the pictures either move with their paragraphs (staggered)
 or are placed from where the paragraph sits *before* alignment (level, at the
 row's top), and how far the labels move says whether the picture counts as
-content when the slack is measured. Row 3 is the signature line of every
-tenant's ``DogLicenseTemplate``: a bottom-aligned cell whose only paragraph is
+content when the slack is measured. Row 3 is the signature line of a
+real-world certificate template: a bottom-aligned cell whose only paragraph is
 empty but for a ``wrapNone`` picture anchored 40pt below it and 80pt tall, so
 it reaches past the row. Its label sits in a fourth, top-aligned cell.
 

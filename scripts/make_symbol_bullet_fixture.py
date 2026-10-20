@@ -15,7 +15,7 @@ the next is the height of the lines between them:
   G1  a Wingdings bullet (U+F0A7) at 22pt
   G2  a Wingdings bullet at 11pt
 
-Word's announcement-letter template answers the 11pt Symbol case already: each
+A real-world letter template answers the 11pt Symbol case already: each
 bullet line is 16.08pt where a plain Calibri line is 15.36–15.60pt, Symbol's
 ascent (2059 of 2048 units, above Calibri's 1950) over Calibri's descent.
 

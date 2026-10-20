@@ -4,11 +4,11 @@ Word sizes a table's columns from when ``w:tcW`` and ``w:tblGrid`` disagree,
 and how an autofit table shrinks columns whose content is narrower than
 their ``tcW`` to make room for one whose content is wider.
 
-albanyny's SpecialEventPermit declares ``tblLayout fixed``, a grid of
+One real-world template declares ``tblLayout fixed``, a grid of
 4824 + 4824 twips and every cell ``tcW`` 3024 / 6048; Word draws the columns
 151.2 and 302.4pt wide — the ``tcW``. Six other templates declare autofit
 tables whose ``tcW`` differs from the grid by ~120 twips, and there Word
-appears to keep the grid. DonationReport (compat 14, autofit, six ``tcW``
+appears to keep the grid. A report template (compat 14, autofit, six ``tcW``
 1440) shrinks its four narrow columns by unequal amounts, in proportion to
 ``tcW`` minus each column's widest unbreakable content.
 
@@ -17,18 +17,19 @@ Each case is a bordered table in Calibri 10pt, each cell a label paragraph
 and right cell margins, under a ``SEP<case>`` paragraph. ``A`` = 4824/4824
 grid; ``B`` = ``tcW`` 3024/6048; ``C`` = ``tcW`` 6048/3024.
 
-  T1  fixed, ``tblW auto``, grid A, both rows B — the permit's shape
+  T1  fixed, ``tblW auto``, grid A, both rows B — the first template's shape
   T2  autofit, ``tblW auto``, grid A, both rows B
   T3  fixed, grid A, row 1 B, row 2 C — rows disagree
   T4  autofit, grid A, row 1 ``tcW`` = grid, row 2 B
   T5  fixed, ``tblW`` 9648 dxa, grid A, both rows B
   T6  fixed, six columns grid = ``tcW`` 1440, column 1 holds
-      ``{#donations}{Donor}`` (~84pt, no break) — does fixed grow it?
+      ``W``, a 19-character merge tag (~84pt, no break) — does fixed
+      grow it?
   T7  fixed, grid 3024 x 3; row 1 a ``gridSpan`` 2 cell ``tcW`` 7000 and
       one ``tcW`` 2048, row 2 three cells ``tcW`` 3024
-  T8  autofit, six ``tcW`` 1440 holding the DonationReport row
-      (``{#donations}{Donor}``, ``{Email}``, ``{Amount}``, ``{Channel}``,
-      ``{Method}``, ``{PaidDate}{/donations}``) — over the 468pt column
+  T8  autofit, six ``tcW`` 1440 holding the report template's row (``W``,
+      four short merge tags and one that closes the loop) — over the 468pt
+      column
   T9  autofit, ``tblW`` 7200 dxa, six ``tcW`` 1440 holding ``{x}``
   T10 autofit, ``tblW`` 7200 dxa, six ``tcW`` 1440 holding T8's row — does a
       declared width narrower than the columns shrink them in proportion, or
@@ -102,7 +103,7 @@ AUTO = '<w:tblW w:w="0" w:type="auto"/>'
 GRID_A = [4824, 4824]
 B = [(3024, 1), (6048, 1)]
 C = [(6048, 1), (3024, 1)]
-W = "{#donations}{Donor}"
+W = "{#customers}{Buyer}"
 
 
 def run(text: str) -> str:
@@ -140,7 +141,7 @@ def case(name: str, tbl_w: str, layout: str, grid: list, rows: list) -> str:
 
 def main() -> None:
     six = [(1440, 1)] * 6
-    report = [W, "{Email}", "{Amount}", "{Channel}", "{Method}", "{PaidDate}{/donations}"]
+    report = [W, "{Email}", "{Amount}", "{Channel}", "{Method}", "{IssuePay}{/customers}"]
     body = "".join(
         [
             case("T1", AUTO, FIXED, GRID_A, [(B, ["x", "x"]), (B, ["x", "x"])]),

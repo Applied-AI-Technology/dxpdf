@@ -2,7 +2,7 @@
 """Build ``test-files/space-run-height.docx``, which asks whether a run that
 holds only white space stands its line as tall as its font makes it.
 
-holdenma's ``DogLicenseDeliquencyNotice`` sets 10pt Times New Roman text in
+A real-world notice template sets 10pt Times New Roman text in
 a Calibri 11pt document at 1.15, with one unformatted ``" "`` run between two
 words. Word sets that line as the Times New Roman lines around it; a line
 sized from the space's Calibri puts it, and everything below, about 1pt

@@ -134,7 +134,7 @@ pub(crate) const LOOKALIKE_SUBSTITUTIONS: &[Lookalike] = &[
         // Cambria's run of English text over Caladea's, per face, over a
         // 20,000-character sample of prose: Caladea is 4.4% narrower in
         // Regular and 1.1% in Bold Italic. Stretched by these, the words of
-        // albanyny's SpecialEventPermitTemplate are 1.5% off Cambria's on
+        // a real-world Cambria form template are 1.5% off Cambria's on
         // average rather than 4%.
         widths: FaceWidths {
             regular: 1.046,

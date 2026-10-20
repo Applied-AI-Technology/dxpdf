@@ -581,7 +581,7 @@ pub(super) fn build_table(
     // Per-edge merge: a side the direct `tblCellMar` declares wins, even at
     // `0`; a side it leaves out falls back to the style's. Word merges per
     // edge rather than replacing the set — and an explicit zero is a value:
-    // `shellfishPermitCards.docx` nests `TableGrid` tables (whose base,
+    // a real-world card template nests `TableGrid` tables (whose base,
     // `TableNormal`, carries 108-twip sides) under `<w:left w:w="0"/>`, and
     // Word puts their text on the table's edge. A style's own undeclared
     // sides are zero, as they always were.
@@ -683,7 +683,7 @@ pub(super) fn build_table(
     //
     // A cell's own `w:tcBorders` — or its conditional formatting's — wins the
     // outer edge over the table's (§17.4.66), and Word places the table by
-    // what wins. Measured on the corpus's DogLicenseReport: its full-width
+    // what wins. Measured on a real-world report template: its full-width
     // `ListTable3-Accent3` tables declare 0.5pt outer borders, every first cell
     // sets `w:left="nil"` and every last cell `w:right="nil"`, and Word puts the
     // first column's text exactly one cell margin inside the left margin and
@@ -1123,8 +1123,8 @@ pub(super) fn build_table(
     // A nested table is built at the width its cell is given, so a table
     // holding one is measured first — speculatively, its document-order
     // counters rolled back — and built again at its final widths. Word fits
-    // a nested table to the column its enclosing table settles on: the tenant
-    // ClerkSummaryReports' fee tables come out exactly as `autofit_widths`
+    // a nested table to the column its enclosing table settles on: a report
+    // template's nested fee tables come out exactly as `autofit_widths`
     // shrinks them into the 215.5pt column it gives the outer table.
     let has_nested = t.rows.iter().any(|r| {
         r.cells
@@ -1859,10 +1859,10 @@ fn cell_horizontal_inset(cell: &TableCellInput) -> Pt {
 ///
 /// A word stands at the left indent, the first at the left indent plus the
 /// first-line one, and the right indent is kept clear after it — signed, as
-/// line layout reads them. Measured on the tenant DelinquencyNotices, whose
-/// 163pt `{#ownerAddress}{fullAddressPrimary}` holds a 169.5pt column in Word
-/// because its paragraph is indented −5.25pt; and on albanyny's
-/// `template.docx`, an empty numbered paragraph indented 23.5pt with a 17.85pt
+/// line layout reads them. Measured on a real-world notice template, whose
+/// 163pt address merge tag holds a 169.5pt column in Word
+/// because its paragraph is indented −5.25pt; and on another real-world
+/// template, an empty numbered paragraph indented 23.5pt with a 17.85pt
 /// hanging indent, whose label in a 35.2pt column Word does not widen.
 ///
 /// Plus a hundredth of a point. Word sizes columns in twips, so a column it
@@ -2003,7 +2003,7 @@ fn longest_path(columns: usize, claims: &[ColumnClaim]) -> Vec<Pt> {
 /// covers, which may already be at its widest, so the shortfall has to move to
 /// the columns before it: each grid line is pushed right until the column after
 /// it fits under its cap, and the claims are walked again, until nothing moves.
-/// Capping each column instead loses the span — the tenant Shellfish permits'
+/// Capping each column instead loses the span — a card template's
 /// `Signature:` covers a 39.6pt and a 10.6pt column, and a cap gave the first
 /// back what the shrink then took, cutting the word.
 fn minimum_within(claims: &[ColumnClaim], widest: &[Pt]) -> Vec<Pt> {
@@ -2039,14 +2039,14 @@ fn minimum_within(claims: &[ColumnClaim], widest: &[Pt]) -> Vec<Pt> {
 /// take (`limit`).
 ///
 /// Measured in Word against `test-files/autofit-columns.docx` and
-/// `table-widths.docx`, and on the tenant DonationReport:
+/// `table-widths.docx`, and on a real-world report template:
 ///
-/// * a column grows to the widest word in it — `{#donations}{Donor}` widens a
-///   72pt column to 94.56pt, its tag plus the cell margins;
+/// * a column grows to the widest word in it — `{#customers}{Buyer}`, as wide
+///   in Calibri as the report's own tag, widens a 72pt column to 94.56pt, its tag plus the cell margins;
 /// * a table without a width keeps those columns while they fit, and past
 ///   `limit` takes the excess from the columns with room to give, each in
 ///   proportion to how far its width stands above its minimum —
-///   DonationReport's `{Email}` column, 33pt of room, gives 14.6pt where the
+///   that report's `{Email}` column, 33pt of room, gives 14.6pt where the
 ///   `{Amount}` columns, 22pt each, give 9.8pt;
 /// * a table with a width scales the grown columns up to it proportionally
 ///   (`autofit-columns.docx` F5), or takes it the way the case above does
@@ -2057,7 +2057,7 @@ fn minimum_within(claims: &[ColumnClaim], widest: &[Pt]) -> Vec<Pt> {
 /// than declared (T10: 388pt of them in a 360pt table) — while they fit
 /// `limit`. When they do not even fit that, nothing grows: the declared widths
 /// are kept, scaled to `target` when there is one, and the words are cut in
-/// their cells. Measured on the tenant DogLicenseMonthlyReports, whose 100%
+/// their cells. Measured on real-world monthly report templates, whose 100%
 /// tables of eleven merge-tag columns would need 782pt of minimums on a 540pt
 /// line, and which Word draws at their declared widths.
 fn autofit_widths(
@@ -3167,7 +3167,7 @@ mod tests {
 
     /// §17.4.42: a side `<w:tblCellMar>` states at `0` is a value, not an
     /// absence — it overrides the style's side. Word puts the text of
-    /// `shellfishPermitCards.docx`'s nested `TableGrid` tables (whose base
+    /// a real-world card template's nested `TableGrid` tables (whose base
     /// `TableNormal` carries 108-twip sides) on the table's edge under
     /// `<w:left w:w="0"/><w:right w:w="0"/>`; reading the zeros as unstated
     /// inset every card 5.4pt on both sides and broke its labels mid-word.

@@ -5,10 +5,9 @@ line spacing adds below the text does not.
 
 A §17.3.1.33 ``auto`` line is its text's height scaled by ``w:line/240``, and
 Word puts the baseline at the text's ascent below the line's top, so the
-scaled extra is all below the text. Word's DogLicenseOnlineAnnouncementLetter
-template ends a page with a Calibri 11pt line at 1.15 whose text ends at
-754.87pt and whose extra would end at 756.89pt, past the 756pt margin, and
-keeps it there.
+scaled extra is all below the text. A real-world letter template ends a page
+with a Calibri 11pt line at 1.15 whose text ends at 754.87pt and whose extra
+would end at 756.89pt, past the 756pt margin, and keeps it there.
 
 Each case is one page: an ``exact`` spacer paragraph that puts the top of the
 case's line ``room`` points above the bottom margin, then the line ``<case>``

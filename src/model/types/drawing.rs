@@ -396,7 +396,7 @@ pub struct Blip {
     /// §20.1.8.4 `a:alphaModFix/@amt`: the opacity the picture is drawn at,
     /// a `ST_PositiveFixedPercentage` (100000 = opaque). `None` when absent,
     /// which is opaque. Word's "Transparency" slider on a picture writes it —
-    /// a watermark seal at `amt="5000"` is drawn at 5%.
+    /// a watermark picture at `amt="5000"` is drawn at 5%.
     pub alpha_mod_fix: Option<Dimension<ThousandthPercent>>,
 }
 

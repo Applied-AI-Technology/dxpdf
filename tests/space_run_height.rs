@@ -7,8 +7,8 @@
 //! 11pt) one between two words (S1, S2), at the start of the line (S8), at the
 //! end of a paragraph (S6), as a tab (S9) and on the last of several lines
 //! (S10), and at single spacing (T1, T2). A visible `x` in Calibri (S3) and a
-//! no-break space (S5) grow the line by 1.2pt. holdenma's delinquency notice
-//! is S1.
+//! no-break space (S5) grow the line by 1.2pt. A real notice template's stray
+//! space is S1.
 //!
 //! A paragraph holding only a 20pt space (S7) is as tall in Word as its 10pt
 //! mark makes it, which this engine does not yet do: it keeps the space's

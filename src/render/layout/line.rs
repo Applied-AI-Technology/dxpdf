@@ -429,8 +429,8 @@ struct RangeMeasure {
 /// line taller for white space in a larger face — not a 20pt space between
 /// two 10pt words, at the start of the line or at its end, nor an
 /// unformatted 11pt space or tab in 10pt text (`test-files/space-run-height.docx`;
-/// holdenma's delinquency notice, ShellfishTransactionReport's
-/// `{ orderPaidDate}`). A no-break space is not white space to it and counts.
+/// a notice template's unformatted space, a report template's tag opened
+/// with a space). A no-break space is not white space to it and counts.
 /// A line of nothing but white space keeps it, having nothing else to stand
 /// on.
 fn range_metrics(fragments: &[Fragment], start: usize, end: usize) -> LineMetrics {
@@ -608,7 +608,7 @@ mod tests {
 
     /// A space adds nothing to its line's height, at the line's end or inside
     /// it: Word ends a 9pt line with an unformatted 11pt space run and keeps
-    /// the line 9pt tall (ShellfishTransactionReport, `{ orderPaidDate}`), and
+    /// the line 9pt tall (a report template's tag opened with a space), and
     /// sets a 20pt space between two 10pt words on a 10pt line
     /// (`test-files/space-run-height.docx`).
     #[test]

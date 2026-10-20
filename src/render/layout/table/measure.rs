@@ -39,8 +39,8 @@ use super::types::{
 /// whole width. Measured against `test-files/border-margin-room.docx`: under
 /// 1.45pt margins a 0.5pt cell bottom border takes no room and a 3pt one
 /// 1.55, a cell top border or an `insideH` its full width, and with no
-/// margins every one of them its width. The clerk reports rule their header
-/// row with a bottom border alone, and each such row was 0.5pt too tall;
+/// margins every one of them its width. Some report templates rule their
+/// header row with a bottom border alone, and each such row was 0.5pt too tall;
 /// the transaction reports and the `ListTable3` reports state the same edge
 /// as the next row's top too, and Word gives it its width there.
 fn strip_below(

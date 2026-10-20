@@ -5,8 +5,8 @@ top and bottom margins (§17.4.38, §17.4.42/§17.4.39), and whether a
 paragraph's space after holds above a table.
 
 ``test-files/row-border-room.docx`` settled the border with no cell margins:
-every interior border takes its width. The clerk reports' tables put a 0.5pt
-``tcBorders/bottom`` under their header row and 29-twip (1.45pt) top and
+every interior border takes its width. Some report templates' tables put a
+0.5pt ``tcBorders/bottom`` under their header row and 29-twip (1.45pt) top and
 bottom ``tblCellMar``, and Word sets each such row about 0.5pt shorter than
 margins plus border would make it. Their tables also follow a paragraph
 with ``w:after="20"``, which Word appears not to keep.

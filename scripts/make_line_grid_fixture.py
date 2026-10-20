@@ -5,8 +5,8 @@ heights it stacks a page from.
 Every baseline Word writes sits on a multiple of 0.24pt — 1/300in — and its
 lines are not the font's metrics rounded once at the end: a run of identical
 10pt Calibri paragraphs at 1.15 steps 14.16pt (59 units) where the metrics
-give 14.04, so the difference adds up down the page (albanyny's
-CivicRecordCertificate is 2.3pt low by its last line). Only Word can say
+give 14.04, so the difference adds up down the page (a real-world
+certificate template is 2.3pt low by its last line). Only Word can say
 which heights it rounds, and in which direction.
 
 The page size and margins are a whole number of units (1in = 300), so a

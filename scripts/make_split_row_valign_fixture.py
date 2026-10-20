@@ -3,7 +3,7 @@
 cell's content vertically (§17.4.84 ``w:vAlign``) in a row that breaks
 across pages.
 
-holdenma's DogLicenseRenewalNotice has a two-cell row that Word breaks over
+A real-world notice template has a two-cell row that Word breaks over
 pages 1 and 2. Its right cell is ``vAlign="bottom"``, and Word sets the one
 line of it that reaches page 2 at the top of the continuation, level with
 the left cell's first line there, where bottom alignment would put it two

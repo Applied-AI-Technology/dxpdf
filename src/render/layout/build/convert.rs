@@ -407,7 +407,7 @@ pub(super) fn paragraph_style_from_props(
         .collect();
     // A hanging indent is a tab stop: a tab on the first line stops at the
     // left indent, where the lines below start, unless a stop of the
-    // paragraph's own comes first. Word stops holdenma's notices'
+    // paragraph's own comes first. Word stops a notice template's
     // `ind left="333" hanging="180"` first-line tab at 16.65pt rather than at
     // the 36pt default; a numbering label's suffix tab is the common case.
     if indent_first_line < Pt::ZERO
@@ -707,7 +707,7 @@ pub(super) fn remap_legacy_font_chars(
 /// [`remap_legacy_font_chars`] moves such text out of the face, so whatever
 /// draws it — a text face, or the host's own Symbol, which on a Mac is a
 /// different face (1436/612 of 2048) — does not stand the line as tall as
-/// Word does. Word's announcement-letter template steps 16.08pt for a Calibri
+/// Word does. In a real-world letter template Word steps 16.08pt for a Calibri
 /// 11pt line at 1.15 behind an 11pt Symbol bullet, Symbol's ascent over
 /// Calibri's descent, against 15.44pt for the same line without it.
 pub(super) fn legacy_font_line_metrics(font_family: &str) -> Option<VerticalMetrics> {

@@ -67,7 +67,7 @@ fn a_bottom_border_takes_its_space_and_width_below_the_text() {
     }
 }
 
-/// The clerk summary reports' empty paragraph: its mark's line, 3pt of space
+/// A report template's empty paragraph: its mark's line, 3pt of space
 /// and the 0.75pt rule.
 #[test]
 fn an_empty_bordered_paragraph_takes_a_line_and_its_border() {

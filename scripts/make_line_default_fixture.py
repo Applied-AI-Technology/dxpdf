@@ -6,7 +6,7 @@ gives a paragraph when the styles part has no ``w:pPrDefault``.
 1.15 but are not: its 10pt Calibri lines step 14.14pt where 1.15 gives
 14.04, the same body under a stated single-spaced ``pPrDefault`` matches
 dxpdf to the grid, and a stated ``w:line="276"`` under one does too. Across
-albanyny's CivicRecordCertificate (8–18pt) the excess scales with the size,
+a real-world certificate template (8–18pt) the excess scales with the size,
 as a multiple near 278/240 would. The render says whether it is a multiple
 at all, of what height, and whether it holds in another face.
 

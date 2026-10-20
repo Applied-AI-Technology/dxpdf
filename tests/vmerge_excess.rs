@@ -6,7 +6,7 @@
 //! span already holds the room between its rows that a border in another
 //! column takes: each table's 0.5pt line between rows 1 and 2 of column B
 //! does not make the merged column's span 0.5pt taller than its content.
-//! albanyny's delinquency and renewal notices close with V1.
+//! Two real-world notice templates close with V1.
 //!
 //! Asserted as Word's distances from that line to the paragraph after the
 //! table, which the table's bottom decides.

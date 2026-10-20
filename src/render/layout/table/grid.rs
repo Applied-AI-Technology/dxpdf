@@ -165,7 +165,7 @@ fn cell_has_nested_table(cell: &TableCellInput) -> bool {
 /// than taking its content height on top of the gap. Word sets a three-row
 /// merge whose neighbouring column draws a 0.5pt line between its first two
 /// rows at the merged content's height, not 0.5pt more
-/// (`test-files/vmerge-excess.docx`, albanyny's delinquency notice).
+/// (`test-files/vmerge-excess.docx`, a real-world notice template).
 ///
 /// A lone `Restart` with no `Continue` below it is not a span, and is sized by
 /// the normal row-height path in `measure_table_rows` instead.

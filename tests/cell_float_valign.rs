@@ -7,7 +7,7 @@
 //! picture is anchored 25.95pt below its top keeps its line above the
 //! picture, so the cell's content ends at the picture's foot (59.2pt), the
 //! row keeps its 73.8pt minimum, and a bottom-aligned cell stands the picture
-//! on the row's bottom border — haddam's dog-licence signature (R1). Anchored
+//! on the row's bottom border — a real template's signature (R1). Anchored
 //! at the paragraph's top (R4) the line goes under the picture. The other
 //! wrap modes (R2, R3) align as R1 does; a picture reaching past the minimum
 //! grows the row to its foot and no further (R5).

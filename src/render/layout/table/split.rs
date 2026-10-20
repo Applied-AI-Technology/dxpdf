@@ -1231,7 +1231,7 @@ mod tests {
         assert_eq!(texts(&parts.second.entries[1].layout.commands).len(), 3);
         // The row less its deepest cut, 94 - 56 = 38, would clip the margined
         // cell, which was cut higher and carries three lines: 42pt between its
-        // two 5pt margins. holdenma's renewal notices ended a table 2.3pt early
+        // two 5pt margins. A notice template ended a table 2.3pt early
         // on page 2 this way.
         assert_eq!(
             parts.second.height,

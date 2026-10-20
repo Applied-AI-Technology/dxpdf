@@ -2876,9 +2876,9 @@ mod tests {
         assert!(per_page[1].iter().any(|text| text == "forced"));
     }
 
-    /// A keepNext paragraph before one that is a page break alone — the
-    /// ShellfishDailyCashReport's report ends. The break paragraph puts only its
-    /// mark line on the page, and a page's last paragraph need not fit its
+    /// A keepNext paragraph before one that is a page break alone — how a
+    /// daily report template ends each report. The break paragraph puts only
+    /// its mark line on the page, and a page's last paragraph need not fit its
     /// space after (issue #126), so the pair fits the 38pt left: 14 + 14, with
     /// the break's 12pt after allowed past the bottom. Charged that space, or
     /// a line for the break itself, the heading moved and stranded a page.

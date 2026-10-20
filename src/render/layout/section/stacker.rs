@@ -639,8 +639,8 @@ mod tests {
     }
 
     /// A band anchored below the paragraph's line leaves the line where it is,
-    /// and the stacked height reaches the band's foot — haddam's signature
-    /// cell (`test-files/cell-float-valign.docx`).
+    /// and the stacked height reaches the band's foot — a real-world
+    /// template's signature cell (`test-files/cell-float-valign.docx`).
     #[test]
     fn a_band_below_the_line_leaves_the_line_above_it() {
         let result = stack(&[para(

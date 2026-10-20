@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build ``test-files/picture-transparency.docx``, which is §20.1.8.4 ``a:alphaModFix``,
-the picture "Transparency" Word writes (every tenant's shellfish permit card
-carries its watermark seal at ``amt="5000"``): an opaque control, an inline
-picture at 5% and an anchored one at 50%, in that order.
+the picture "Transparency" Word writes (real templates draw a watermark
+picture at ``amt="5000"``): an opaque control, an inline picture at 5% and an
+anchored one at 50%, in that order.
 
 It carries its own ``styles.xml`` (Times New Roman 12pt, no paragraph
 spacing, ``TableNormal`` cell margins) for the reason ``bidi-visual-table.docx``

@@ -146,7 +146,7 @@ fn a_spanning_cell_widens_the_last_column_it_covers() {
     assert_columns(&columns(&pages, "T721"), &[151.2, 198.8, 151.2], "T7");
 }
 
-/// T8: DonationReport's row. The two tags grow their columns; the table is then
+/// T8: a report template's row. The two tags grow their columns; the table is then
 /// wider than the text column and shrinks back to it, the others giving in
 /// proportion to their room above their own tags.
 #[test]
@@ -287,8 +287,8 @@ fn para(text: &str) -> String {
 }
 
 /// A nested autofit table is fitted to the column its enclosing table settles
-/// on, not the one it was first offered — Word's own cached grids in the tenant
-/// ClerkSummaryReports are exactly `autofit_widths` applied to the outer
+/// on, not the one it was first offered — Word's own cached grids in real
+/// summary-report templates are exactly `autofit_widths` applied to the outer
 /// column. Here two 300pt outer columns overflow the text column and shrink,
 /// and the nested table in the first, preferring 300pt, must fit what is left
 /// of it: its outer edges on the cell's text edges, inside its margins.
