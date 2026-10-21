@@ -29,3 +29,8 @@ pub mod zip;
 pub fn parse(data: &[u8]) -> error::Result<model::Document> {
     parse::parse(data)
 }
+
+/// [`parse()`] for a package already out of its ZIP: steps 2–4 only.
+pub fn parse_package(package: zip::PackageContents) -> error::Result<model::Document> {
+    parse::parse_package(package)
+}

@@ -16,7 +16,7 @@
 
 use std::panic::{self, AssertUnwindSafe};
 
-use napi::bindgen_prelude::{AsyncTask, Buffer, Env, Error, Result, Task, Uint8Array};
+use napi::bindgen_prelude::{AsyncTask, Buffer, Either, Env, Error, Result, Task, Uint8Array};
 use napi_derive::napi;
 
 /// `node/index.d.ts` documents these for JavaScript callers.
@@ -108,7 +108,16 @@ impl Task for ConvertBatch {
         }
     }
 
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Self::resolve_output(env, output)
+    }
+}
+
+impl ConvertBatch {
+    fn resolve_output(
+        _env: Env,
+        output: std::result::Result<Vec<u8>, (usize, String)>,
+    ) -> Result<BatchResult> {
         Ok(match output {
             Ok(pdf) => BatchResult {
                 pdf: Some(pdf.into()),
@@ -122,6 +131,58 @@ impl Task for ConvertBatch {
             },
         })
     }
+}
+
+pub struct ConvertPartsBatch {
+    packages: Vec<crate::docx::zip::PackageContents>,
+    options: crate::RenderOptions,
+}
+
+impl Task for ConvertPartsBatch {
+    type Output = std::result::Result<Vec<u8>, (usize, String)>;
+    type JsValue = BatchResult;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let packages = std::mem::take(&mut self.packages);
+        match guarded(|| crate::convert_packages_batch_with_options(packages, &self.options))? {
+            Ok(pdf) => Ok(Ok(pdf)),
+            Err(crate::Error::Document { index, source }) => Ok(Err((index, source.to_string()))),
+            Err(e) => Err(Error::from_reason(e.to_string())),
+        }
+    }
+
+    fn resolve(&mut self, env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        ConvertBatch::resolve_output(env, output)
+    }
+}
+
+/// [`convert_batch`] for documents given as their parts rather than as ZIPs:
+/// each an object from part path to its content, a string for XML or bytes
+/// for anything else — what a templating engine holds after filling. See
+/// [`crate::convert_packages_batch_with_options`].
+#[napi]
+pub fn convert_parts_batch(
+    documents: Vec<std::collections::HashMap<String, Either<String, Uint8Array>>>,
+    options: Option<ConvertOptions>,
+) -> AsyncTask<ConvertPartsBatch> {
+    let packages = documents
+        .into_iter()
+        .map(|parts| {
+            crate::docx::zip::PackageContents::from_parts(parts.into_iter().map(
+                |(path, content)| {
+                    let bytes = match content {
+                        Either::A(text) => text.into_bytes(),
+                        Either::B(bytes) => bytes.to_vec(),
+                    };
+                    (path, bytes)
+                },
+            ))
+        })
+        .collect();
+    AsyncTask::new(ConvertPartsBatch {
+        packages,
+        options: render_options(options),
+    })
 }
 
 /// Convert several DOCX documents into one PDF, in order — see

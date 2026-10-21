@@ -28,9 +28,18 @@ async function convertBatch(documents, options) {
   throw new DocumentError(result.failedIndex, result.error);
 }
 
+// convertBatch for documents given as their parts — { path: string | Uint8Array } —
+// rather than as ZIPs, as a templating engine holds them after filling.
+async function convertPartsBatch(documents, options) {
+  const result = await native.convertPartsBatch(documents, options);
+  if (result.pdf) return result.pdf;
+  throw new DocumentError(result.failedIndex, result.error);
+}
+
 module.exports = {
   convert,
   convertBatch,
+  convertPartsBatch,
   DocumentError,
   DEFAULT_IMAGE_DPI: native.DEFAULT_IMAGE_DPI,
   MIN_IMAGE_DPI: native.MIN_IMAGE_DPI,

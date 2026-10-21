@@ -26,14 +26,18 @@ use crate::docx::zip::{self, PackageContents};
 
 /// Parse a DOCX file from raw bytes into a `Document`.
 pub fn parse(data: &[u8]) -> Result<Document> {
+    // Phase 1: Unzip
+    parse_package(PackageContents::from_bytes(data)?)
+}
+
+/// Parse a DOCX package whose parts are already out of the ZIP — what a
+/// templating engine holds after filling one — into a `Document`.
+pub fn parse_package(mut package: PackageContents) -> Result<Document> {
     // Unmodelled-property reporting is deduplicated per document, so the set
     // has to be forgotten here rather than kept for the process — otherwise
     // the second document rendered would look clean because the first already
     // logged the same name. See `serde_xml::UnknownChildren::warn_once`.
     serde_xml::reset_unknown_child_log();
-
-    // Phase 1: Unzip
-    let mut package = PackageContents::from_bytes(data)?;
 
     // Phase 1b: Find main document part via package-level rels
     let pkg_rels_data = package.require_part("_rels/.rels")?;

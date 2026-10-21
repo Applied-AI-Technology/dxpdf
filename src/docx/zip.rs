@@ -29,6 +29,17 @@ impl PackageContents {
         Ok(Self { parts })
     }
 
+    /// A package from parts that are not in a ZIP, keyed by path as a ZIP
+    /// entry would be (a leading slash and case are normalized away).
+    pub fn from_parts<P: AsRef<str>>(parts: impl IntoIterator<Item = (P, Vec<u8>)>) -> Self {
+        Self {
+            parts: parts
+                .into_iter()
+                .map(|(path, bytes)| (normalize_path(path.as_ref()), bytes))
+                .collect(),
+        }
+    }
+
     /// Get the bytes for a part, case-insensitively.
     pub fn get_part(&self, path: &str) -> Option<&[u8]> {
         let normalized = normalize_path(path);

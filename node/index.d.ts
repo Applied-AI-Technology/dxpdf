@@ -20,6 +20,17 @@ export function convert(docx: Uint8Array, options?: ConvertOptions): Promise<Buf
  */
 export function convertBatch(documents: Uint8Array[], options?: ConvertOptions): Promise<Buffer>;
 
+/**
+ * `convertBatch` for documents given as their parts instead of as ZIPs: each an
+ * object from part path (as in the ZIP, e.g. `word/document.xml`) to its
+ * content, a string for XML or bytes for anything else. No ZIP is written to be
+ * read straight back.
+ */
+export function convertPartsBatch(
+  documents: Array<Record<string, string | Uint8Array>>,
+  options?: ConvertOptions,
+): Promise<Buffer>;
+
 export class DocumentError extends Error {
   readonly name: 'DocumentError';
   /** Position of the failing document in the batch. */

@@ -72,6 +72,42 @@ pub fn convert_batch_with_options<D: AsRef<[u8]>>(
         })
         .collect::<Result<Vec<_>, _>>()?;
     log::debug!("Parse:  {:?} ({} documents)", t0.elapsed(), parsed.len());
+    render_parsed_batch(parsed, options, t0)
+}
+
+/// [`convert_batch_with_options`] for packages already out of their ZIPs, as a
+/// templating engine holds them after filling: no ZIP is written to be read
+/// straight back. Fails the same ways, with the same indices.
+pub fn convert_packages_batch_with_options(
+    packages: Vec<crate::docx::zip::PackageContents>,
+    options: &RenderOptions,
+) -> Result<Vec<u8>, Error> {
+    use std::time::Instant;
+
+    if packages.is_empty() {
+        return Err(Error::EmptyBatch);
+    }
+    let t0 = Instant::now();
+    let parsed = packages
+        .into_iter()
+        .enumerate()
+        .map(|(index, package)| {
+            crate::docx::parse_package(package).map_err(|e| Error::Document {
+                index,
+                source: Box::new(e.into()),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    log::debug!("Parse:  {:?} ({} documents)", t0.elapsed(), parsed.len());
+    render_parsed_batch(parsed, options, t0)
+}
+
+fn render_parsed_batch(
+    parsed: Vec<crate::docx::model::Document>,
+    options: &RenderOptions,
+    t0: std::time::Instant,
+) -> Result<Vec<u8>, Error> {
+    use std::time::Instant;
 
     let t1 = Instant::now();
     let pdf_bytes = crate::render::render_batch(parsed, options)?;
